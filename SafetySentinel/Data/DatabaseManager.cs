@@ -1,0 +1,358 @@
+using SafetySentinel.Models;
+using SQLite;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+
+namespace SafetySentinel.Data
+{
+    public class DatabaseManager : IDisposable
+    {
+        private readonly SQLiteConnection _db;
+        private readonly string _dbPath;
+
+        public DatabaseManager()
+        {
+            var folder = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "SafetySentinel");
+            Directory.CreateDirectory(folder);
+            _dbPath = Path.Combine(folder, "sentinel.db");
+
+            _db = new SQLiteConnection(_dbPath);
+            CreateTables();
+        }
+
+        private void CreateTables()
+        {
+            _db.CreateTable<UserProfile>();
+            _db.CreateTable<CountryProfile>();
+            _db.CreateTable<AlertCategory>();
+            _db.CreateTable<CrimeHotspot>();
+            _db.CreateTable<DailyScore>();
+            _db.CreateTable<ExecutiveBrief>();
+            _db.CreateTable<WatchlistItem>();
+            _db.CreateTable<ExitPlanItem>();
+            _db.CreateTable<ThreatEvent>();
+            _db.CreateTable<AvoidanceItem>();
+            _db.CreateTable<Source>();
+            _db.CreateTable<GeofenceAlert>();
+            _db.CreateTable<ActionItem>();
+
+            SeedIfEmpty();
+        }
+
+        private void SeedIfEmpty()
+        {
+            if (_db.Table<CountryProfile>().Count() == 0)
+            {
+                _db.InsertAll(SeedData.GetCountries());
+            }
+
+            if (_db.Table<AlertCategory>().Count() == 0)
+            {
+                _db.InsertAll(SeedData.GetAlertCategories());
+            }
+
+            if (_db.Table<CrimeHotspot>().Count() == 0)
+            {
+                _db.InsertAll(SeedData.GetSouthAfricaHotspots());
+            }
+
+            if (_db.Table<ExitPlanItem>().Count() == 0)
+            {
+                _db.InsertAll(SeedData.GetExitPlanItems());
+            }
+        }
+
+        public string GetDatabasePath() => _dbPath;
+
+        #region Profile
+
+        public UserProfile GetProfile()
+        {
+            var profile = _db.Table<UserProfile>().FirstOrDefault();
+            return profile ?? new UserProfile();
+        }
+
+        public void SaveProfile(UserProfile profile)
+        {
+            profile.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (profile.Id == 0)
+                _db.Insert(profile);
+            else
+                _db.Update(profile);
+        }
+
+        #endregion
+
+        #region Countries
+
+        public List<CountryProfile> GetAllCountries()
+        {
+            return _db.Table<CountryProfile>().ToList();
+        }
+
+        public void SaveCountry(CountryProfile country)
+        {
+            country.UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (country.Id == 0)
+                _db.Insert(country);
+            else
+                _db.Update(country);
+        }
+
+        #endregion
+
+        #region Hotspots
+
+        public List<CrimeHotspot> GetActiveHotspots()
+        {
+            return _db.Table<CrimeHotspot>().Where(h => h.Active).ToList();
+        }
+
+        #endregion
+
+        #region Alert Categories
+
+        public List<AlertCategory> GetAlertCategories()
+        {
+            return _db.Table<AlertCategory>().ToList();
+        }
+
+        public void SaveAlertCategory(AlertCategory cat)
+        {
+            _db.Update(cat);
+        }
+
+        #endregion
+
+        #region Briefs
+
+        public ExecutiveBrief? GetLatestBrief()
+        {
+            return _db.Table<ExecutiveBrief>()
+                .OrderByDescending(b => b.BriefDateTicks)
+                .FirstOrDefault();
+        }
+
+        public List<ExecutiveBrief> GetAllBriefs()
+        {
+            return _db.Table<ExecutiveBrief>()
+                .OrderByDescending(b => b.BriefDateTicks)
+                .ToList();
+        }
+
+        public void SaveBrief(ExecutiveBrief brief)
+        {
+            brief.CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _db.Insert(brief);
+        }
+
+        #endregion
+
+        #region Watchlist
+
+        public List<WatchlistItem> GetWatchlist()
+        {
+            return _db.Table<WatchlistItem>().ToList();
+        }
+
+        public void AddWatchlistItem(WatchlistItem item)
+        {
+            item.AddedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _db.Insert(item);
+        }
+
+        public void RemoveWatchlistItem(int id)
+        {
+            _db.Delete<WatchlistItem>(id);
+        }
+
+        #endregion
+
+        #region Avoidance Items
+
+        public List<AvoidanceItem> GetAvoidanceItems()
+        {
+            return _db.Table<AvoidanceItem>().Where(a => a.Active).ToList();
+        }
+
+        #endregion
+
+        #region Exit Plans
+
+        public List<ExitPlanItem> GetExitPlanByName(string planName)
+        {
+            return _db.Table<ExitPlanItem>()
+                .Where(e => e.PlanName == planName)
+                .OrderBy(e => e.SortOrder)
+                .ToList();
+        }
+
+        public void SaveExitPlanItem(ExitPlanItem item)
+        {
+            _db.Update(item);
+        }
+
+        #endregion
+
+        #region Daily Scores
+
+        public void SaveDailyScore(DailyScore score)
+        {
+            score.CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _db.Insert(score);
+        }
+
+        public List<DailyScore> GetDailyScores(string countryCode)
+        {
+            return _db.Table<DailyScore>()
+                .Where(d => d.CountryCode == countryCode)
+                .OrderByDescending(d => d.Date)
+                .ToList();
+        }
+
+        #endregion
+
+        #region Export / Import
+
+        public string ExportAllDataToJson()
+        {
+            var data = new
+            {
+                profile = GetProfile(),
+                countries = GetAllCountries(),
+                alertCategories = GetAlertCategories(),
+                hotspots = _db.Table<CrimeHotspot>().ToList(),
+                briefs = GetAllBriefs(),
+                watchlist = GetWatchlist(),
+                exitPlans = _db.Table<ExitPlanItem>().ToList(),
+                dailyScores = _db.Table<DailyScore>().ToList(),
+                avoidanceItems = _db.Table<AvoidanceItem>().ToList(),
+                exportDate = DateTime.UtcNow
+            };
+            return JsonConvert.SerializeObject(data, Formatting.Indented);
+        }
+
+        public string ExportForMobile()
+        {
+            var data = new
+            {
+                format = "sentinel-mobile",
+                version = 1,
+                profile = GetProfile(),
+                countries = GetAllCountries(),
+                hotspots = GetActiveHotspots(),
+                watchlist = GetWatchlist(),
+                exitPlans = _db.Table<ExitPlanItem>().ToList(),
+                avoidanceItems = GetAvoidanceItems(),
+                latestBrief = GetLatestBrief(),
+                exportDate = DateTime.UtcNow
+            };
+            return JsonConvert.SerializeObject(data, Formatting.Indented);
+        }
+
+        public (int countries, int hotspots, int watchlist, int avoidance, int exitPlans) ImportFromSentinel(string json)
+        {
+            var data = Newtonsoft.Json.Linq.JObject.Parse(json);
+            int countries = 0, hotspots = 0, watchlist = 0, avoidance = 0, exitPlans = 0;
+
+            if (data["countries"] != null)
+            {
+                var items = data["countries"]!.ToObject<List<CountryProfile>>() ?? new();
+                foreach (var item in items)
+                {
+                    var existing = _db.Table<CountryProfile>()
+                        .FirstOrDefault(c => c.CountryCode == item.CountryCode);
+                    if (existing != null)
+                    {
+                        item.Id = existing.Id;
+                        _db.Update(item);
+                    }
+                    else
+                    {
+                        item.Id = 0;
+                        _db.Insert(item);
+                    }
+                    countries++;
+                }
+            }
+
+            if (data["hotspots"] != null)
+            {
+                var items = data["hotspots"]!.ToObject<List<CrimeHotspot>>() ?? new();
+                foreach (var item in items)
+                {
+                    item.Id = 0;
+                    _db.Insert(item);
+                    hotspots++;
+                }
+            }
+
+            if (data["watchlist"] != null)
+            {
+                var items = data["watchlist"]!.ToObject<List<WatchlistItem>>() ?? new();
+                foreach (var item in items)
+                {
+                    item.Id = 0;
+                    _db.Insert(item);
+                    watchlist++;
+                }
+            }
+
+            if (data["avoidanceItems"] != null)
+            {
+                var items = data["avoidanceItems"]!.ToObject<List<AvoidanceItem>>() ?? new();
+                foreach (var item in items)
+                {
+                    item.Id = 0;
+                    _db.Insert(item);
+                    avoidance++;
+                }
+            }
+
+            if (data["exitPlans"] != null)
+            {
+                var items = data["exitPlans"]!.ToObject<List<ExitPlanItem>>() ?? new();
+                foreach (var item in items)
+                {
+                    item.Id = 0;
+                    _db.Insert(item);
+                    exitPlans++;
+                }
+            }
+
+            if (data["profile"] != null)
+            {
+                var imported = data["profile"]!.ToObject<UserProfile>();
+                if (imported != null)
+                {
+                    var existing = GetProfile();
+                    if (existing.Id > 0)
+                    {
+                        imported.Id = existing.Id;
+                        _db.Update(imported);
+                    }
+                    else
+                    {
+                        imported.Id = 0;
+                        _db.Insert(imported);
+                    }
+                }
+            }
+
+            return (countries, hotspots, watchlist, avoidance, exitPlans);
+        }
+
+        #endregion
+
+        public void Dispose()
+        {
+            _db?.Close();
+            _db?.Dispose();
+        }
+    }
+}

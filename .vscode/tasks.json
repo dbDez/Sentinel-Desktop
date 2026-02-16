@@ -1,0 +1,50 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Base64 encode PNG",
+			"type": "shell",
+			"command": "powershell -Command \"[Convert]::ToBase64String([IO.File]::ReadAllBytes('c:\\Sentinel\\SafetySentinel\\Assets\\Sentinel.png')) | Out-File -Encoding ascii 'c:\\Sentinel\\Sentinel_b64.txt' -NoNewline\""
+		},
+		{
+			"label": "Base64 encode PNG",
+			"type": "shell",
+			"command": "powershell -Command \"[Convert]::ToBase64String([IO.File]::ReadAllBytes('c:\\Sentinel\\SafetySentinel\\Assets\\Sentinel.png')) | Out-File -Encoding ascii 'c:\\Sentinel\\Sentinel_b64.txt' -NoNewline\""
+		},
+		{
+			"label": "Base64 Encode PNG File",
+			"type": "shell",
+			"command": "powershell -Command \"[Convert]::ToBase64String([IO.File]::ReadAllBytes('c:\\Sentinel\\SafetySentinel\\Assets\\Sentinel.png')) | Set-Content -Path 'c:\\Sentinel\\Sentinel_b64.txt' -NoNewline\"",
+			"isBackground": false
+		},
+		{
+			"label": "Encode PNG to Base64",
+			"type": "shell",
+			"command": "powershell -NoProfile -Command \"$b = [Convert]::ToBase64String([IO.File]::ReadAllBytes('c:\\Sentinel\\SafetySentinel\\Assets\\Sentinel.png')); [IO.File]::WriteAllText('c:\\Sentinel\\Sentinel_b64.txt', $b)\"",
+			"isBackground": false
+		},
+		{
+			"label": "encode-png",
+			"type": "shell",
+			"command": "powershell -NoProfile -Command \"[Convert]::ToBase64String([IO.File]::ReadAllBytes('c:\\Sentinel\\SafetySentinel\\Assets\\Sentinel.png')) | Out-File -FilePath 'c:\\Sentinel\\b64.txt' -Encoding ascii -NoNewline; Write-Host 'Done encoding'\""
+		},
+		{
+			"label": "b64encode",
+			"type": "shell",
+			"command": "powershell -NoProfile -Command \"$b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes('c:\\Sentinel\\SafetySentinel\\Assets\\Sentinel.png')); Set-Content -Path 'c:\\Sentinel\\b64out.txt' -Value $b64 -NoNewline; echo 'DONE'\"",
+			"isBackground": false
+		},
+		{
+			"label": "encode-png-b64",
+			"type": "shell",
+			"command": "powershell -ExecutionPolicy Bypass -File c:\\Sentinel\\encode.ps1",
+			"isBackground": false
+		},
+		{
+			"label": "python-encode",
+			"type": "shell",
+			"command": "python c:\\Sentinel\\encode_png.py",
+			"isBackground": false
+		}
+	]
+}

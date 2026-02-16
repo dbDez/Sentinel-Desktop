@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sqlite3:*)",
+      "Bash(done)",
+      "Bash(python:*)",
+      "Bash(copy \"C:\\\\Restored\\\\C\\\\Users\\\\Pieters.PAV\\\\AppData\\\\Roaming\\\\Code\\\\User\\\\History\\\\-37e7295c\\\\wWlU.cs\" \"C:\\\\Sentinel\\\\SafetySentinel\\\\MainWindow.xaml.cs\")",
+      "Bash(copy:*)",
+      "Bash(cmd /c 'copy \"\"C:\\\\Restored\\\\C\\\\Users\\\\Pieters.PAV\\\\AppData\\\\Roaming\\\\Code\\\\User\\\\History\\\\-37e7295c\\\\wWlU.cs\"\" \"\"C:\\\\Sentinel\\\\SafetySentinel\\\\MainWindow.xaml.cs\"\"')",
+      "Bash(cmd /c:*)",
+      "Bash(cmd /c 'copy \"\"C:\\\\Restored\\\\C\\\\Users\\\\Pieters.PAV\\\\AppData\\\\Roaming\\\\Code\\\\User\\\\History\\\\-3d6d94ec\\\\giaF.Config\"\" \"\"C:\\\\Sentinel\\\\SafetySentinel\\\\NuGet.Config\"\"')",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet publish:*)",
+      "Bash(dotnet run:*)",
+      "Bash(dotnet-script:*)",
+      "Bash(\"C:/Sentinel/IconMaker/IconMaker.csproj\" << 'EOF'\n<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <TargetFramework>net8.0</TargetFramework>\n  </PropertyGroup>\n  <ItemGroup>\n    <PackageReference Include=\"System.Drawing.Common\" Version=\"8.0.0\" />\n  </ItemGroup>\n</Project>\nEOF)"
+    ]
+  }
+}
