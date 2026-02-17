@@ -133,6 +133,7 @@
 
     <script>
         let scene, camera, renderer, globeGroup, globe, countryMarkers = [], hotspotMarkers = [];
+        let threatRings = [];
         let countryData = [], hotspotData = [];
         let autoRotate = true, isDragging = false, isAnimating = false;
         let previousMouse = { x: 0, y: 0 };
@@ -187,32 +188,54 @@
             globeGroup = new THREE.Group();
             scene.add(globeGroup);
 
-            // Earth — load base texture, globe is usable immediately once this loads
-            const earthTexture = textureLoader.load(
-                'https://unpkg.com/three-globe@2.31.1/example/img/earth-blue-marble.jpg',
-                function(tex) {
-                    tex.anisotropy = maxAniso;
-                    // Globe is now ready for markers
-                    globeReady = true;
-                    window.chrome.webview.postMessage('GLOBE_READY');
-                }
-            );
-            const bumpTexture = textureLoader.load(
-                'https://unpkg.com/three-globe@2.31.1/example/img/earth-topology.png',
-                function(tex) { tex.anisotropy = maxAniso; }
-            );
-
+            // Earth — show a dark globe immediately, then swap texture when CDN loads
             const globeGeometry = new THREE.SphereGeometry(GLOBE_RADIUS, 128, 128);
             globeMaterial = new THREE.MeshPhongMaterial({
-                map: earthTexture,
-                bumpMap: bumpTexture,
-                bumpScale: 0.05,
+                color: new THREE.Color(0x0a1628),
                 specular: new THREE.Color(0x111827),
                 shininess: 8,
-                color: new THREE.Color(0.55, 0.55, 0.65)
+                emissive: new THREE.Color(0x050d18),
+                emissiveIntensity: 0.3
             });
             globe = new THREE.Mesh(globeGeometry, globeMaterial);
             globeGroup.add(globe);
+
+            // Add wireframe grid overlay so globe is visible immediately
+            const wireGeo = new THREE.SphereGeometry(GLOBE_RADIUS + 0.02, 36, 18);
+            const wireMat = new THREE.MeshBasicMaterial({
+                color: 0x1a3a5c, wireframe: true, transparent: true, opacity: 0.25
+            });
+            const wireGlobe = new THREE.Mesh(wireGeo, wireMat);
+            globeGroup.add(wireGlobe);
+
+            // Globe is usable immediately — signal ready NOW before textures load
+            globeReady = true;
+            window.chrome.webview.postMessage('GLOBE_READY');
+
+            // Load textures asynchronously — swap them in when downloaded
+            textureLoader.load(
+                'https://unpkg.com/three-globe@2.31.1/example/img/earth-blue-marble.jpg',
+                function(tex) {
+                    tex.anisotropy = maxAniso;
+                    globeMaterial.map = tex;
+                    globeMaterial.color = new THREE.Color(0.55, 0.55, 0.65);
+                    globeMaterial.emissive = new THREE.Color(0x000000);
+                    globeMaterial.emissiveIntensity = 0;
+                    globeMaterial.needsUpdate = true;
+                    // Fade out wireframe
+                    wireGlobe.material.opacity = 0;
+                    wireGlobe.visible = false;
+                }
+            );
+            textureLoader.load(
+                'https://unpkg.com/three-globe@2.31.1/example/img/earth-topology.png',
+                function(tex) {
+                    tex.anisotropy = maxAniso;
+                    globeMaterial.bumpMap = tex;
+                    globeMaterial.bumpScale = 0.05;
+                    globeMaterial.needsUpdate = true;
+                }
+            );
 
             // Atmosphere glow
             const atmosGeo = new THREE.SphereGeometry(GLOBE_RADIUS + 0.15, 64, 64);
@@ -253,6 +276,9 @@
               bumpUrl: 'https://unpkg.com/three-globe@2.31.3/example/img/earth-topology.png' },
             { zoom: 7, tex: null, bump: null, loaded: false,
               url: 'https://unpkg.com/three-globe@2.34.2/example/img/earth-blue-marble.jpg',
+              bumpUrl: 'https://unpkg.com/three-globe@2.34.2/example/img/earth-topology.png' },
+            { zoom: 5, tex: null, bump: null, loaded: false,
+              url: 'https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74218/world.200412.3x5400x2700.jpg',
               bumpUrl: 'https://unpkg.com/three-globe@2.34.2/example/img/earth-topology.png' }
         ];
 
@@ -299,11 +325,9 @@
         }
 
         // ===== Marker scaling =====
-        // Scale markers inversely proportional to zoom so they appear constant
-        // size on screen at default zoom, and shrink when zooming in.
+        // Country markers and hotspot markers scale inversely to zoom so they stay visually constant.
+        // Threat rings ALSO scale inversely so they remain a fixed screen size when zooming.
         function getMarkerScale() {
-            // At DEFAULT_ZOOM (15) → scale 1.0
-            // At min zoom (7) → scale ~0.47 (markers shrink as you get closer)
             return cameraDistance / DEFAULT_ZOOM;
         }
 
@@ -313,6 +337,9 @@
                 m.scale.set(s, s, s);
             });
             hotspotMarkers.forEach(m => {
+                m.scale.set(s, s, s);
+            });
+            threatRings.forEach(m => {
                 m.scale.set(s, s, s);
             });
         }
@@ -380,6 +407,8 @@
             countryData = data;
             countryMarkers.forEach(m => globeGroup.remove(m));
             countryMarkers = [];
+            threatRings.forEach(m => globeGroup.remove(m));
+            threatRings = [];
 
             data.forEach(country => {
                 const pos = latLonToVector3(country.lat, country.lng, GLOBE_RADIUS + 0.01);
@@ -394,13 +423,13 @@
                 countryMarkers.push(marker);
 
                 if (country.overall >= 51) {
-                    const ringGeo = new THREE.RingGeometry(MARKER_SIZE * 1.5, MARKER_SIZE * 2.2, 16);
+                    const ringGeo = new THREE.RingGeometry(MARKER_SIZE * 1.5, MARKER_SIZE * 2.2, 32);
                     const ringMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
                     const ring = new THREE.Mesh(ringGeo, ringMat);
                     ring.position.copy(pos);
                     ring.lookAt(new THREE.Vector3(0,0,0));
                     globeGroup.add(ring);
-                    countryMarkers.push(ring);
+                    threatRings.push(ring);
                 }
             });
 
@@ -467,6 +496,7 @@
                     t = 1;
                     globeGroup.quaternion.copy(quaternionForLatLon(lat, lon));
                     cameraDistance = targetZoom;
+                    targetZoomDistance = targetZoom;
                     camera.position.set(0, 0, cameraDistance);
                     camera.lookAt(0, 0, 0);
                     updateMarkerScales();
@@ -477,6 +507,7 @@
                 const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
                 globeGroup.quaternion.slerpQuaternions(startQ, targetQ, ease);
                 cameraDistance = startZoom + (targetZoom - startZoom) * ease;
+                targetZoomDistance = cameraDistance;
                 camera.position.set(0, 0, cameraDistance);
                 camera.lookAt(0, 0, 0);
                 updateMarkerScales();
@@ -539,8 +570,9 @@
         // This is the proven working approach — premultiply world-space quaternions.
         function applyDragRotation(dx, dy) {
             const radPerPx = getRadiansPerPixel();
-            const angleY = dx * radPerPx;
-            const angleX = dy * radPerPx;
+            const zoomFactor = cameraDistance / DEFAULT_ZOOM;
+            const angleY = dx * radPerPx * zoomFactor;
+            const angleX = dy * radPerPx * zoomFactor;
 
             if (Math.abs(angleY) > 0.000001) {
                 const qY = new THREE.Quaternion();
@@ -562,7 +594,8 @@
         function applyZRollRotation(dy, side) {
             const radPerPx = getRadiansPerPixel();
             const direction = (side === 'zroll-right') ? -1 : 1;
-            const angleZ = dy * radPerPx * direction;
+            const zoomFactor = cameraDistance / DEFAULT_ZOOM;
+            const angleZ = dy * radPerPx * direction * zoomFactor;
             if (Math.abs(angleZ) > 0.000001) {
                 const qZ = new THREE.Quaternion();
                 qZ.setFromAxisAngle(new THREE.Vector3(0, 0, 1), angleZ);
@@ -614,6 +647,18 @@
                     <div class="threat-bar"><div class="threat-bar-fill" style="${barStyle}"></div></div>
                 </div>`;
             });
+            // Genocide risk as a full threat bar in domains (if applicable)
+            if (country.genocide && country.genocide > 0) {
+                const genocideScore = Math.round(country.genocide * 10); // Convert 0-10 to 0-100 scale
+                const genocideLabel = genocideScore <= 10 ? 'Minimal Risk' : genocideScore <= 25 ? 'Fairly Safe' : genocideScore <= 40 ? 'Moderate Risk' : genocideScore <= 55 ? 'Elevated Risk' : genocideScore <= 70 ? 'High Risk' : genocideScore <= 85 ? 'Severe Risk' : 'Extreme Risk';
+                const genocideBarStyle = getThreatBarStyle(genocideScore);
+                const stageNames = ['Not applicable','Classification','Symbolization','Discrimination','Dehumanization','Organization','Polarization','Preparation','Persecution','Extermination','Denial'];
+                const stageName = stageNames[Math.min(country.genocide, 10)] || 'Unknown';
+                html += `<div class="domain-row">
+                    <div class="domain-label"><span>⚠ Genocide Risk (Stage ${country.genocide}: ${stageName})</span><span class="domain-score" style="color:${country.genocide >= 4 ? '#ef4444' : country.genocide >= 2 ? '#f97316' : '#e5e7eb'}">${genocideScore}/100 — ${genocideLabel}</span></div>
+                    <div class="threat-bar"><div class="threat-bar-fill" style="${genocideBarStyle}"></div></div>
+                </div>`;
+            }
             document.getElementById('sidebar-domains').innerHTML = html;
 
             let extras = '<div class="sidebar-section">ADDITIONAL INDICATORS</div>';
@@ -665,8 +710,9 @@
 
                     // Track velocity for momentum
                     const radPerPx = getRadiansPerPixel();
-                    velocityX = dx * radPerPx;
-                    velocityY = dy * radPerPx;
+                    const zoomFactor = cameraDistance / DEFAULT_ZOOM;
+                    velocityX = dx * radPerPx * zoomFactor;
+                    velocityY = dy * radPerPx * zoomFactor;
                 }
 
                 previousMouse = { x: e.clientX, y: e.clientY };
@@ -715,13 +761,14 @@
             }
         }
 
+        // Smooth zoom target — actual cameraDistance lerps toward this each frame
+        let targetZoomDistance = DEFAULT_ZOOM;
+
         function onMouseWheel(e) {
             if (isAnimating) return;
-            cameraDistance += e.deltaY * 0.01;
-            cameraDistance = Math.max(7, Math.min(25, cameraDistance));
-            camera.position.set(0, 0, cameraDistance);
-            updateMarkerScales();
-            updateLOD();
+            // Multiplicative zoom for smooth feel
+            const zoomFactor = 1 + e.deltaY * 0.001;
+            targetZoomDistance = Math.max(6, Math.min(25, targetZoomDistance * zoomFactor));
         }
 
         function onWindowResize() {
@@ -733,6 +780,17 @@
         // ===== Animation =====
         function animate() {
             requestAnimationFrame(animate);
+
+            // Smooth zoom interpolation
+            if (!isAnimating) {
+                const zoomDiff = targetZoomDistance - cameraDistance;
+                if (Math.abs(zoomDiff) > 0.001) {
+                    cameraDistance += zoomDiff * 0.12; // lerp factor
+                    camera.position.set(0, 0, cameraDistance);
+                    updateMarkerScales();
+                    updateLOD();
+                }
+            }
 
             if (!isDragging && !isAnimating) {
                 if (Math.abs(velocityX) > MIN_VELOCITY || Math.abs(velocityY) > MIN_VELOCITY) {

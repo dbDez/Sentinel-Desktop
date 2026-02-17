@@ -14,6 +14,7 @@ namespace SafetySentinel.Models
         public string OverallThreatLevel { get; set; } = "GREEN";
         public string Content { get; set; } = "";
         public string ActionItems { get; set; } = "";
+        public string ChatHistory { get; set; } = "";
         public long CreatedAt { get; set; }
 
         [Ignore]
@@ -24,6 +25,6 @@ namespace SafetySentinel.Models
         }
 
         [Ignore]
-        public string DisplayText => $"{BriefDate:yyyy-MM-dd HH:mm} — {OverallThreatLevel}";
+        public string DisplayText => $"{BriefDate:yyyy-MM-dd HH:mm} ï¿½ {OverallThreatLevel}";
     }
 }

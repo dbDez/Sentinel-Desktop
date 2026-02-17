@@ -13,8 +13,11 @@ namespace SafetySentinel.Models
         public int Age { get; set; }
         public string Ethnicity { get; set; } = "";
         public string Gender { get; set; } = "Male";
+        public string StreetAddress { get; set; } = "";
+        public string Suburb { get; set; } = "";
         public string CurrentCountry { get; set; } = "ZA";
         public string CurrentCity { get; set; } = "";
+        public string PostalCode { get; set; } = "";
         public double HomeLatitude { get; set; }
         public double HomeLongitude { get; set; }
         public string DestinationCountry { get; set; } = "US";

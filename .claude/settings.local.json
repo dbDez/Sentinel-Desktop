@@ -14,7 +14,9 @@
       "Bash(dotnet publish:*)",
       "Bash(dotnet run:*)",
       "Bash(dotnet-script:*)",
-      "Bash(\"C:/Sentinel/IconMaker/IconMaker.csproj\" << 'EOF'\n<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <TargetFramework>net8.0</TargetFramework>\n  </PropertyGroup>\n  <ItemGroup>\n    <PackageReference Include=\"System.Drawing.Common\" Version=\"8.0.0\" />\n  </ItemGroup>\n</Project>\nEOF)"
+      "Bash(\"C:/Sentinel/IconMaker/IconMaker.csproj\" << 'EOF'\n<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n    <TargetFramework>net8.0</TargetFramework>\n  </PropertyGroup>\n  <ItemGroup>\n    <PackageReference Include=\"System.Drawing.Common\" Version=\"8.0.0\" />\n  </ItemGroup>\n</Project>\nEOF)",
+      "Bash(dir:*)",
+      "Bash(wc:*)"
     ]
   }
 }

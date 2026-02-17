@@ -40,6 +40,7 @@ namespace SafetySentinel.Data
             _db.CreateTable<Source>();
             _db.CreateTable<GeofenceAlert>();
             _db.CreateTable<ActionItem>();
+            _db.CreateTable<PersonalAlert>();
 
             SeedIfEmpty();
         }
@@ -151,6 +152,16 @@ namespace SafetySentinel.Data
             _db.Insert(brief);
         }
 
+        public void UpdateBrief(ExecutiveBrief brief)
+        {
+            _db.Update(brief);
+        }
+
+        public void DeleteBrief(int id)
+        {
+            _db.Delete<ExecutiveBrief>(id);
+        }
+
         #endregion
 
         #region Watchlist
@@ -213,6 +224,26 @@ namespace SafetySentinel.Data
                 .Where(d => d.CountryCode == countryCode)
                 .OrderByDescending(d => d.Date)
                 .ToList();
+        }
+
+        #endregion
+
+        #region Personal Alerts
+
+        public List<PersonalAlert> GetActivePersonalAlerts()
+        {
+            return _db.Table<PersonalAlert>().Where(a => a.Active).ToList();
+        }
+
+        public void AddPersonalAlert(PersonalAlert alert)
+        {
+            alert.CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _db.Insert(alert);
+        }
+
+        public void RemovePersonalAlert(int id)
+        {
+            _db.Delete<PersonalAlert>(id);
         }
 
         #endregion
