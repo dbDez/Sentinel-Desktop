@@ -41,6 +41,16 @@ namespace SafetySentinel.Data
             _db.CreateTable<GeofenceAlert>();
             _db.CreateTable<ActionItem>();
             _db.CreateTable<PersonalAlert>();
+            _db.CreateTable<ExcludedLocation>();
+
+            // Migrations: add new columns to existing watchlist table
+            try { _db.Execute("ALTER TABLE watchlist ADD COLUMN City TEXT NOT NULL DEFAULT ''"); } catch { }
+            try { _db.Execute("ALTER TABLE watchlist ADD COLUMN StateProvince TEXT NOT NULL DEFAULT ''"); } catch { }
+            try { _db.Execute("ALTER TABLE watchlist ADD COLUMN ExitPlan INTEGER NOT NULL DEFAULT 0"); } catch { }
+            try { _db.Execute("ALTER TABLE watchlist ADD COLUMN ContinentAdded INTEGER NOT NULL DEFAULT 0"); } catch { }
+
+            // Remove old hardcoded exit plan seed data (new plans are AI-generated per watchlist entry)
+            _db.Execute("DELETE FROM exit_plan_items WHERE PlanName LIKE 'Plan A:%' OR PlanName LIKE 'Plan B:%' OR PlanName LIKE 'Plan C:%'");
 
             SeedIfEmpty();
         }
@@ -62,10 +72,7 @@ namespace SafetySentinel.Data
                 _db.InsertAll(SeedData.GetSouthAfricaHotspots());
             }
 
-            if (_db.Table<ExitPlanItem>().Count() == 0)
-            {
-                _db.InsertAll(SeedData.GetExitPlanItems());
-            }
+            // Exit plans are no longer seeded — they are AI-generated per watchlist entry on scan
         }
 
         public string GetDatabasePath() => _dbPath;
@@ -182,6 +189,11 @@ namespace SafetySentinel.Data
             _db.Delete<WatchlistItem>(id);
         }
 
+        public void UpdateWatchlistItem(WatchlistItem item)
+        {
+            _db.Update(item);
+        }
+
         #endregion
 
         #region Avoidance Items
@@ -189,6 +201,32 @@ namespace SafetySentinel.Data
         public List<AvoidanceItem> GetAvoidanceItems()
         {
             return _db.Table<AvoidanceItem>().Where(a => a.Active).ToList();
+        }
+
+        #endregion
+
+        #region Excluded Locations
+
+        public List<ExcludedLocation> GetExcludedLocations()
+        {
+            return _db.Table<ExcludedLocation>().ToList();
+        }
+
+        public void AddExcludedLocation(ExcludedLocation item)
+        {
+            item.AddedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _db.Insert(item);
+        }
+
+        public void RemoveExcludedLocation(int id)
+        {
+            _db.Delete<ExcludedLocation>(id);
+        }
+
+        public bool IsExplicitlyExcluded(string countryCode)
+        {
+            return _db.Table<ExcludedLocation>()
+                .Any(e => e.CountryCode == countryCode);
         }
 
         #endregion
@@ -206,6 +244,25 @@ namespace SafetySentinel.Data
         public void SaveExitPlanItem(ExitPlanItem item)
         {
             _db.Update(item);
+        }
+
+        public void InsertExitPlanItem(ExitPlanItem item)
+        {
+            item.CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            _db.Insert(item);
+        }
+
+        public void ClearExitPlanByName(string planName)
+        {
+            _db.Execute("DELETE FROM exit_plan_items WHERE PlanName = ?", planName);
+        }
+
+        public List<string> GetDistinctPlanNames()
+        {
+            return _db.Table<ExitPlanItem>()
+                .Select(e => e.PlanName)
+                .Distinct()
+                .ToList();
         }
 
         #endregion

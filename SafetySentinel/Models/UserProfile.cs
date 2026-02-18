@@ -20,8 +20,7 @@ namespace SafetySentinel.Models
         public string PostalCode { get; set; } = "";
         public double HomeLatitude { get; set; }
         public double HomeLongitude { get; set; }
-        public string DestinationCountry { get; set; } = "US";
-        public string DestinationCity { get; set; } = "";
+        // DestinationCountry and DestinationCity moved to WatchlistItem (City/StateProvince fields)
         public string VehicleType { get; set; } = "Sedan";
         public string VehicleMake { get; set; } = "";
         public string VehicleModel { get; set; } = "";

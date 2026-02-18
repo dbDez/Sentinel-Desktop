@@ -179,6 +179,31 @@
         <Style TargetType="CheckBox">
             <Setter Property="Foreground" Value="#e5e7eb"/>
         </Style>
+        <Style TargetType="GridViewColumnHeader">
+            <Setter Property="Background" Value="#1a1f2e"/>
+            <Setter Property="Foreground" Value="#9ca3af"/>
+            <Setter Property="BorderBrush" Value="#1e293b"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+        <Style TargetType="ListViewItem">
+            <Setter Property="Foreground" Value="#e5e7eb"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="2,1"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#1e3a5e"/>
+                    <Setter Property="Foreground" Value="#00ff88"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#1a2535"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
         <Style TargetType="Label">
             <Setter Property="Foreground" Value="#9ca3af"/>
             <Setter Property="FontFamily" Value="Segoe UI"/>
@@ -236,7 +261,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Thumb">
-                        <Border Background="#2a3344" CornerRadius="4"/>
+                        <Border Background="#4a5e78" CornerRadius="4"/>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -706,35 +731,127 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                    <!-- Header + Smart Select -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                         <Image Source="Assets/Sentinel.png" Width="28" Height="28" Margin="0,0,10,0"
                                RenderOptions.BitmapScalingMode="HighQuality" VerticalAlignment="Center"/>
                         <TextBlock Text="COUNTRY WATCHLIST" FontSize="16" FontWeight="Bold"
                                    Foreground="#00ff88" FontFamily="Consolas" VerticalAlignment="Center"/>
+                        <Button x:Name="SmartSelectBtn" Content="&#x26A1; Smart Select"
+                                Margin="16,0,0,0" Click="SmartSelect_Click"
+                                Background="#1a1a3a" Foreground="#a78bfa" BorderBrush="#a78bfa"
+                                Padding="10,4" VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
-                        <TextBox x:Name="WatchCountryCode" Width="60" Margin="0,0,8,0"/>
-                        <TextBox x:Name="WatchReason" Width="300" Margin="0,0,8,0"/>
-                        <Button Content="+ Add" Click="AddWatchlist_Click" Background="#1a3a2a"
-                                Foreground="#00ff88" BorderBrush="#00ff88"/>
-                        <Button Content="Remove" Click="RemoveWatchlist_Click" Margin="8,0,0,0"
-                                Background="#3a1a1a" Foreground="#ef4444" BorderBrush="#ef4444"/>
-                    </StackPanel>
+                    <!-- Continent quick-select -->
+                    <Border Grid.Row="1" Background="#111827" BorderBrush="#1e293b" BorderThickness="1"
+                            CornerRadius="4" Padding="8,6" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="WATCH CONTINENT:" Foreground="#9ca3af" FontSize="11"
+                                       FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <CheckBox x:Name="CbAfrica" Content="Africa" Margin="0,0,10,0" IsThreeState="True"
+                                      Checked="ContinentChecked" Unchecked="ContinentUnchecked"
+                                      Indeterminate="ContinentIndeterminate" Tag="Africa"/>
+                            <CheckBox x:Name="CbAsia" Content="Asia" Margin="0,0,10,0" IsThreeState="True"
+                                      Checked="ContinentChecked" Unchecked="ContinentUnchecked"
+                                      Indeterminate="ContinentIndeterminate" Tag="Asia"/>
+                            <CheckBox x:Name="CbEurope" Content="Europe" Margin="0,0,10,0" IsThreeState="True"
+                                      Checked="ContinentChecked" Unchecked="ContinentUnchecked"
+                                      Indeterminate="ContinentIndeterminate" Tag="Europe"/>
+                            <CheckBox x:Name="CbNorthAmerica" Content="N. America" Margin="0,0,10,0" IsThreeState="True"
+                                      Checked="ContinentChecked" Unchecked="ContinentUnchecked"
+                                      Indeterminate="ContinentIndeterminate" Tag="North America"/>
+                            <CheckBox x:Name="CbSouthAmerica" Content="S. America" Margin="0,0,10,0" IsThreeState="True"
+                                      Checked="ContinentChecked" Unchecked="ContinentUnchecked"
+                                      Indeterminate="ContinentIndeterminate" Tag="South America"/>
+                            <CheckBox x:Name="CbOceania" Content="Oceania" IsThreeState="True"
+                                      Checked="ContinentChecked" Unchecked="ContinentUnchecked"
+                                      Indeterminate="ContinentIndeterminate" Tag="Oceania"/>
+                        </StackPanel>
+                    </Border>
 
-                    <ListBox x:Name="WatchlistView" Grid.Row="2" Background="#111827"
-                             Foreground="#e5e7eb" BorderThickness="0" Margin="0,0,0,16"
-                             DisplayMemberPath="CountryName"/>
+                    <!-- Split panels -->
+                    <Grid Grid.Row="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" MinHeight="80"/>
+                            <RowDefinition Height="5"/>
+                            <RowDefinition Height="2*" MinHeight="80"/>
+                        </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="3" Text="AVOIDANCE ZONES" FontSize="14" FontWeight="Bold"
-                               Foreground="#fbbf24" FontFamily="Consolas" Margin="0,0,0,8"/>
-                    <ListBox x:Name="AvoidanceView" Grid.Row="4" Background="#111827"
-                             Foreground="#e5e7eb" BorderThickness="0"
-                             DisplayMemberPath="Name"/>
+                        <!-- Watchlist -->
+                        <Grid Grid.Row="0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Margin="0,0,0,4" FontSize="11"
+                                       FontFamily="Consolas" FontWeight="SemiBold" Foreground="#00ff88">
+                                <Run Text="&#x25B2; WATCHLIST"/>
+                                <Run Text=" — included in briefs. Right-click to edit or move." Foreground="#6b7280"/>
+                            </TextBlock>
+                            <ListView x:Name="WatchlistView" Grid.Row="1" Background="#111827"
+                                      Foreground="#e5e7eb" BorderThickness="0"
+                                      MouseDoubleClick="WatchlistView_DoubleClick">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Country" Width="175" DisplayMemberBinding="{Binding CountryName}"/>
+                                        <GridViewColumn Header="Code" Width="45" DisplayMemberBinding="{Binding CountryCode}"/>
+                                        <GridViewColumn Header="Cities" Width="150" DisplayMemberBinding="{Binding City}"/>
+                                        <GridViewColumn Header="State/Province" Width="120" DisplayMemberBinding="{Binding StateProvince}"/>
+                                        <GridViewColumn Header="Reason" Width="175" DisplayMemberBinding="{Binding Reason}"/>
+                                        <GridViewColumn Header="Exit Plan" Width="70" DisplayMemberBinding="{Binding ExitPlanLabel}"/>
+                                    </GridView>
+                                </ListView.View>
+                                <ListView.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Add Cities..." Click="WatchCtx_AddCities"/>
+                                        <MenuItem Header="Add State/Province..." Click="WatchCtx_AddState"/>
+                                        <MenuItem Header="Add Watchlist Reason..." Click="WatchCtx_AddReason"/>
+                                        <Separator/>
+                                        <MenuItem Header="Toggle Exit Plan Destination" Click="WatchCtx_ToggleExitPlan"/>
+                                        <Separator/>
+                                        <MenuItem Header="Move to Excluded List" Click="WatchCtx_MoveToExcluded"/>
+                                    </ContextMenu>
+                                </ListView.ContextMenu>
+                            </ListView>
+                        </Grid>
+
+                        <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                      Background="#1e293b" VerticalAlignment="Center" Cursor="SizeNS"/>
+
+                        <!-- Excluded countries -->
+                        <Grid Grid.Row="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Margin="0,4,0,4" FontSize="11"
+                                       FontFamily="Consolas" FontWeight="SemiBold" Foreground="#fbbf24">
+                                <Run Text="&#x25BC; EXCLUDED"/>
+                                <Run Text=" — omitted from briefs. Right-click to add to watchlist." Foreground="#6b7280"/>
+                            </TextBlock>
+                            <ListView x:Name="ExclusionView" Grid.Row="1" Background="#111827"
+                                      Foreground="#e5e7eb" BorderThickness="0"
+                                      MouseDoubleClick="ExclusionView_DoubleClick">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Country" Width="175" DisplayMemberBinding="{Binding CountryName}"/>
+                                        <GridViewColumn Header="Code" Width="45" DisplayMemberBinding="{Binding CountryCode}"/>
+                                        <GridViewColumn Header="Cities" Width="150" DisplayMemberBinding="{Binding City}"/>
+                                        <GridViewColumn Header="State/Province" Width="120" DisplayMemberBinding="{Binding StateProvince}"/>
+                                        <GridViewColumn Header="Reason" Width="220" DisplayMemberBinding="{Binding Reason}"/>
+                                    </GridView>
+                                </ListView.View>
+                                <ListView.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Add to Watchlist" Click="ExclCtx_AddToWatchlist"/>
+                                    </ContextMenu>
+                                </ListView.ContextMenu>
+                            </ListView>
+                        </Grid>
+                    </Grid>
                 </Grid>
             </TabItem>
 
@@ -743,50 +860,91 @@
                 <Grid Background="#0a0e17" Margin="16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
+                    <!-- Header -->
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
                         <Image Source="Assets/Sentinel.png" Width="28" Height="28" Margin="0,0,10,0"
                                RenderOptions.BitmapScalingMode="HighQuality" VerticalAlignment="Center"/>
                         <TextBlock Text="EXIT PLANS" FontSize="16" FontWeight="Bold"
                                    Foreground="#00ff88" FontFamily="Consolas" Margin="0,0,16,0"
                                    VerticalAlignment="Center"/>
-                        <ComboBox x:Name="ExitPlanSelector" Width="250"
-                                  SelectionChanged="ExitPlanSelector_Changed">
-                            <ComboBoxItem Content="Plan A: USA (Primary)" IsSelected="True"/>
-                            <ComboBoxItem Content="Plan B: Portugal (Backup)"/>
-                            <ComboBoxItem Content="Plan C: Emergency Evacuation"/>
-                        </ComboBox>
                         <TextBlock x:Name="ExitPlanProgress" Text="" Foreground="#fbbf24"
-                                   VerticalAlignment="Center" Margin="16,0,0,0" FontWeight="SemiBold"/>
-                        <Button Content="&#x1F4CB; Copy Plan" Click="CopyExitPlan_Click" Margin="16,0,0,0"/>
+                                   VerticalAlignment="Center" Margin="0,0,16,0" FontWeight="SemiBold"/>
+                        <Button Content="&#x1F4CB; Copy Plan" Click="CopyExitPlan_Click"/>
                     </StackPanel>
 
-                    <ListView x:Name="ExitPlanList" Grid.Row="2"
-                              Background="#0a0e17" BorderThickness="0" Foreground="#e5e7eb">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="0,3">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="30"/>
-                                        <ColumnDefinition Width="120"/>
-                                        <ColumnDefinition Width="200"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <CheckBox Grid.Column="0" IsChecked="{Binding Completed}"
-                                              Click="ExitPlanCheck_Click" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Category}" Foreground="#fbbf24"
-                                               FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding TaskTitle}" Foreground="#e5e7eb"
-                                               FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="3" Text="{Binding TaskDescription}" Foreground="#9ca3af"
-                                               FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
+                    <!-- Left + splitter + right -->
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280" MinWidth="150"/>
+                            <ColumnDefinition Width="5"/>
+                            <ColumnDefinition Width="*" MinWidth="200"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Left panel: exit destinations + auto-suggested -->
+                        <Grid Grid.Column="0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="MY EXIT DESTINATIONS" Foreground="#00ff88"
+                                       FontFamily="Consolas" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                            <ListView x:Name="ExitPlanCountriesView" Grid.Row="1"
+                                      Background="#111827" BorderThickness="0" Foreground="#e5e7eb"
+                                      DisplayMemberPath="DisplayText"
+                                      SelectionChanged="ExitPlanCountry_Selected"/>
+                            <TextBlock Grid.Row="2" Text="AUTO-SUGGESTED ROUTES" Foreground="#fbbf24"
+                                       FontFamily="Consolas" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,4"/>
+                            <TextBlock Grid.Row="3" x:Name="AutoExitPlaceholder" TextWrapping="Wrap"
+                                       Text="To see auto-suggested exit routes, enter a valid address in your Profile and press Scan."
+                                       Foreground="#4a5568" FontSize="10" Margin="0,0,0,4"/>
+                            <ListView x:Name="AutoExitView" Grid.Row="4" MaxHeight="180"
+                                      Background="#111827" BorderThickness="0" Foreground="#9ca3af"
+                                      DisplayMemberPath="DisplayText"/>
+                        </Grid>
+
+                        <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center"
+                                      Background="#1e293b" VerticalAlignment="Stretch" Cursor="SizeWE"/>
+
+                        <!-- Right panel: tasks for selected destination -->
+                        <Grid Grid.Column="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="ExitPlanTitle" Grid.Row="0"
+                                       Text="&#x2190; Select a destination"
+                                       Foreground="#9ca3af" FontFamily="Consolas" FontSize="12" Margin="8,0,0,8"/>
+                            <ListView x:Name="ExitPlanList" Grid.Row="1"
+                                      Background="#0a0e17" BorderThickness="0" Foreground="#e5e7eb" Margin="8,0,0,0">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,3">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="30"/>
+                                                <ColumnDefinition Width="120"/>
+                                                <ColumnDefinition Width="200"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding Completed}"
+                                                      Click="ExitPlanCheck_Click" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Category}" Foreground="#fbbf24"
+                                                       FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding TaskTitle}" Foreground="#e5e7eb"
+                                                       FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="3" Text="{Binding TaskDescription}" Foreground="#9ca3af"
+                                                       FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+                    </Grid>
                 </Grid>
             </TabItem>
 
@@ -812,7 +970,6 @@
                                 <ColumnDefinition Width="300"/>
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="36"/>
                                 <RowDefinition Height="36"/>
                                 <RowDefinition Height="36"/>
                                 <RowDefinition Height="36"/>
@@ -864,13 +1021,8 @@
                             <TextBox x:Name="ProfileLon" Grid.Row="6" Grid.Column="4" Width="150" HorizontalAlignment="Left"
                                      IsReadOnly="True" Foreground="#9ca3af"/>
 
-                            <Label Content="Dest. Country" Grid.Row="7" Grid.Column="0"/>
-                            <TextBox x:Name="ProfileDestCountry" Grid.Row="7" Grid.Column="1" Width="80" HorizontalAlignment="Left"/>
-                            <Label Content="Dest. City" Grid.Row="7" Grid.Column="3"/>
-                            <TextBox x:Name="ProfileDestCity" Grid.Row="7" Grid.Column="4"/>
-
-                            <Label Content="Vehicle Type" Grid.Row="8" Grid.Column="0"/>
-                            <ComboBox x:Name="ProfileVehicleType" Grid.Row="8" Grid.Column="1" Width="120" HorizontalAlignment="Left">
+                            <Label Content="Vehicle Type" Grid.Row="7" Grid.Column="0"/>
+                            <ComboBox x:Name="ProfileVehicleType" Grid.Row="7" Grid.Column="1" Width="120" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="Sedan"/>
                                 <ComboBoxItem Content="SUV"/>
                                 <ComboBoxItem Content="Hatchback"/>
@@ -878,8 +1030,8 @@
                                 <ComboBoxItem Content="Luxury"/>
                                 <ComboBoxItem Content="4x4"/>
                             </ComboBox>
-                            <Label Content="Make / Model" Grid.Row="8" Grid.Column="3"/>
-                            <TextBox x:Name="ProfileVehicleMakeModel" Grid.Row="8" Grid.Column="4"/>
+                            <Label Content="Make / Model" Grid.Row="7" Grid.Column="3"/>
+                            <TextBox x:Name="ProfileVehicleMakeModel" Grid.Row="7" Grid.Column="4"/>
                         </Grid>
 
                         <!-- Values, Health, Skills -->

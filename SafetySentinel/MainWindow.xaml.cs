@@ -239,8 +239,6 @@ namespace SafetySentinel
             ProfilePostalCode.Text = _profile.PostalCode;
             ProfileLat.Text = _profile.HomeLatitude.ToString("F6");
             ProfileLon.Text = _profile.HomeLongitude.ToString("F6");
-            ProfileDestCountry.Text = _profile.DestinationCountry;
-            ProfileDestCity.Text = _profile.DestinationCity;
             ProfileImmigration.Text = _profile.ImmigrationStatus;
             SelectComboItem(ProfileVehicleType, _profile.VehicleType);
             ProfileVehicleMakeModel.Text = $"{_profile.VehicleMake} {_profile.VehicleModel}".Trim();
@@ -261,8 +259,6 @@ namespace SafetySentinel
             _profile.CurrentCity = ProfileCity.Text;
             _profile.CurrentCountry = ProfileCountry.Text;
             _profile.PostalCode = ProfilePostalCode.Text;
-            _profile.DestinationCountry = ProfileDestCountry.Text;
-            _profile.DestinationCity = ProfileDestCity.Text;
             _profile.ImmigrationStatus = ProfileImmigration.Text;
             _profile.VehicleType = (ProfileVehicleType.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Sedan";
             var makeModel = ProfileVehicleMakeModel.Text.Split(' ', 2);
@@ -741,40 +737,388 @@ namespace SafetySentinel
 
         #region Watchlist Tab
 
-        private void LoadWatchlist()
+        // View model for countries in the exclusion list (computed, not persisted)
+        private class CountryViewItem
         {
-            WatchlistView.ItemsSource = _db.GetWatchlist();
-            AvoidanceView.ItemsSource = _db.GetAvoidanceItems();
+            public string CountryName { get; set; } = "";
+            public string CountryCode { get; set; } = "";
+            public string City { get; set; } = "";
+            public string StateProvince { get; set; } = "";
+            public string Reason { get; set; } = "";
         }
 
-        private void AddWatchlist_Click(object sender, RoutedEventArgs e)
-        {
-            var code = WatchCountryCode.Text.Trim().ToUpper();
-            var reason = WatchReason.Text.Trim();
-            if (string.IsNullOrEmpty(code)) { MessageBox.Show("Enter a country code."); return; }
+        private bool _suppressContinentEvents = false;
 
-            var country = _countries.FirstOrDefault(c => c.CountryCode == code);
+        private void UpdateContinentCheckboxes(HashSet<string> watchedCodes)
+        {
+            _suppressContinentEvents = true;
+            var map = new (string continent, CheckBox cb)[]
+            {
+                ("Africa",        CbAfrica),
+                ("Asia",          CbAsia),
+                ("Europe",        CbEurope),
+                ("North America", CbNorthAmerica),
+                ("South America", CbSouthAmerica),
+                ("Oceania",       CbOceania),
+            };
+            foreach (var (continent, cb) in map)
+            {
+                if (!SeedData.ContinentCountryCodes.TryGetValue(continent, out var codes)) continue;
+                int watched = codes.Count(c => watchedCodes.Contains(c));
+                cb.IsChecked = watched == 0 ? false : watched == codes.Length ? true : (bool?)null;
+            }
+            _suppressContinentEvents = false;
+        }
+
+        private void ContinentChecked(object sender, RoutedEventArgs e)
+        {
+            if (_suppressContinentEvents) return;
+            ProcessContinentAdd((string)((CheckBox)sender).Tag);
+        }
+
+        private void ContinentUnchecked(object sender, RoutedEventArgs e)
+        {
+            if (_suppressContinentEvents) return;
+            ProcessContinentRemove((string)((CheckBox)sender).Tag);
+        }
+
+        private void ContinentIndeterminate(object sender, RoutedEventArgs e)
+        {
+            if (_suppressContinentEvents) return;
+            // User clicked a fully-checked box → it went to indeterminate → skip to unchecked
+            var cb = (CheckBox)sender;
+            _suppressContinentEvents = true;
+            cb.IsChecked = false;
+            _suppressContinentEvents = false;
+            ProcessContinentRemove((string)cb.Tag);
+        }
+
+        private void ProcessContinentAdd(string continent)
+        {
+            if (!SeedData.ContinentCountryCodes.TryGetValue(continent, out var codes)) return;
+            var existingCodes = _db.GetWatchlist().Select(w => w.CountryCode)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            int added = 0;
+            foreach (var code in codes)
+            {
+                if (existingCodes.Contains(code)) continue;
+                if (!SeedData.AllWorldCountries.TryGetValue(code, out var name)) continue;
+                _db.AddWatchlistItem(new WatchlistItem
+                {
+                    CountryCode = code,
+                    CountryName = name,
+                    ContinentAdded = true,
+                    AlertThreshold = 60,
+                    ChangeThreshold = 10
+                });
+                added++;
+            }
+            LoadWatchlist();
+            LoadExitPlans();
+            UpdateStatus($"Added {added} {continent} countries to watchlist.");
+        }
+
+        private void ProcessContinentRemove(string continent)
+        {
+            if (!SeedData.ContinentCountryCodes.TryGetValue(continent, out var codes)) return;
+            var codesSet = new HashSet<string>(codes, StringComparer.OrdinalIgnoreCase);
+            var allInContinent = _db.GetWatchlist().Where(w => codesSet.Contains(w.CountryCode)).ToList();
+            if (!allInContinent.Any()) { LoadWatchlist(); return; }
+
+            var manualOnes = allInContinent.Where(w => !w.ContinentAdded).ToList();
+            if (manualOnes.Count > 0)
+            {
+                var names = string.Join(", ", manualOnes.Take(3).Select(w => w.CountryName));
+                if (manualOnes.Count > 3) names += $" and {manualOnes.Count - 3} more";
+                var ans = MessageBox.Show(
+                    $"{manualOnes.Count} {continent} countr{(manualOnes.Count == 1 ? "y was" : "ies were")} added manually ({names}).\n\n" +
+                    $"[Yes] Remove ALL {continent} countries\n[No] Keep manually added, remove continent-added only\n[Cancel] Do nothing",
+                    "Remove Continent", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+                if (ans == MessageBoxResult.Cancel) { LoadWatchlist(); return; }
+                if (ans == MessageBoxResult.No)
+                {
+                    foreach (var item in allInContinent.Where(w => w.ContinentAdded))
+                        _db.RemoveWatchlistItem(item.Id);
+                    LoadWatchlist(); LoadExitPlans();
+                    UpdateStatus($"Removed continent-added {continent} countries. Manually added ones kept.");
+                    return;
+                }
+            }
+            foreach (var item in allInContinent)
+                _db.RemoveWatchlistItem(item.Id);
+            LoadWatchlist();
+            LoadExitPlans();
+            UpdateStatus($"Removed {allInContinent.Count} {continent} countries from watchlist.");
+        }
+
+        private void LoadWatchlist()
+        {
+            var watchlist = _db.GetWatchlist();
+            WatchlistView.ItemsSource = watchlist;
+
+            var watchedCodes = watchlist.Select(w => w.CountryCode)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            UpdateContinentCheckboxes(watchedCodes);
+
+            // Exclusion list = all world countries NOT on watchlist
+            var excluded = SeedData.AllWorldCountries
+                .Where(kvp => !watchedCodes.Contains(kvp.Key))
+                .OrderBy(kvp => kvp.Value)
+                .Select(kvp => new CountryViewItem { CountryName = kvp.Value, CountryCode = kvp.Key })
+                .ToList();
+            ExclusionView.ItemsSource = excluded;
+        }
+
+        // --- Watchlist context menu ---
+
+        private void WatchCtx_AddCities(object sender, RoutedEventArgs e)
+        {
+            if (WatchlistView.SelectedItem is not WatchlistItem item) return;
+            var input = ShowInputDialog("Add Cities",
+                $"Cities for {item.CountryName} (separate with commas or /):", item.City);
+            if (input == null) return;
+            item.City = NormalizeList(input);
+            _db.UpdateWatchlistItem(item);
+            LoadWatchlist();
+        }
+
+        private void WatchCtx_AddState(object sender, RoutedEventArgs e)
+        {
+            if (WatchlistView.SelectedItem is not WatchlistItem item) return;
+            var input = ShowInputDialog("Add State/Province",
+                $"State/Province for {item.CountryName}:", item.StateProvince);
+            if (input == null) return;
+            item.StateProvince = input.Trim();
+            _db.UpdateWatchlistItem(item);
+            LoadWatchlist();
+        }
+
+        private void WatchCtx_AddReason(object sender, RoutedEventArgs e)
+        {
+            if (WatchlistView.SelectedItem is not WatchlistItem item) return;
+            var input = ShowInputDialog("Watchlist Reason",
+                $"Why are you watching {item.CountryName}?", item.Reason);
+            if (input == null) return;
+            item.Reason = input.Trim();
+            _db.UpdateWatchlistItem(item);
+            LoadWatchlist();
+        }
+
+        private void WatchCtx_ToggleExitPlan(object sender, RoutedEventArgs e)
+        {
+            if (WatchlistView.SelectedItem is not WatchlistItem item) return;
+            item.ExitPlan = !item.ExitPlan;
+            _db.UpdateWatchlistItem(item);
+            LoadWatchlist();
+            LoadExitPlans();
+            UpdateStatus($"{item.CountryName} {(item.ExitPlan ? "added to" : "removed from")} exit plan destinations.");
+        }
+
+        private void WatchCtx_MoveToExcluded(object sender, RoutedEventArgs e)
+        {
+            if (WatchlistView.SelectedItem is not WatchlistItem item) return;
+            _db.RemoveWatchlistItem(item.Id);
+            LoadWatchlist();
+            LoadExitPlans();
+            UpdateStatus($"{item.CountryName} moved to excluded list.");
+        }
+
+        // --- Exclusion list context menu ---
+
+        private void ExclCtx_AddToWatchlist(object sender, RoutedEventArgs e)
+        {
+            if (ExclusionView.SelectedItem is not CountryViewItem item) return;
             _db.AddWatchlistItem(new WatchlistItem
             {
-                CountryCode = code,
-                CountryName = country?.CountryName ?? code,
-                Reason = reason,
+                CountryCode = item.CountryCode,
+                CountryName = item.CountryName,
+                ContinentAdded = false,
                 AlertThreshold = 60,
                 ChangeThreshold = 10
             });
-            WatchCountryCode.Text = "";
-            WatchReason.Text = "";
             LoadWatchlist();
-            UpdateStatus($"Added {code} to watchlist.");
+            UpdateStatus($"{item.CountryName} added to watchlist.");
         }
 
-        private void RemoveWatchlist_Click(object sender, RoutedEventArgs e)
+        // --- Double-click handlers ---
+
+        private void WatchlistView_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            if (WatchlistView.SelectedItem is WatchlistItem item)
+            if (WatchlistView.SelectedItem is not WatchlistItem item) return;
+            var input = ShowInputDialog("Edit Cities",
+                $"Cities for {item.CountryName} (comma or / separated):", item.City);
+            if (input == null) return;
+            item.City = NormalizeList(input);
+            _db.UpdateWatchlistItem(item);
+            LoadWatchlist();
+        }
+
+        private void ExclusionView_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (ExclusionView.SelectedItem is not CountryViewItem item) return;
+            _db.AddWatchlistItem(new WatchlistItem
             {
-                _db.RemoveWatchlistItem(item.Id);
-                LoadWatchlist();
+                CountryCode = item.CountryCode,
+                CountryName = item.CountryName,
+                ContinentAdded = false,
+                AlertThreshold = 60,
+                ChangeThreshold = 10
+            });
+            LoadWatchlist();
+            UpdateStatus($"{item.CountryName} added to watchlist.");
+        }
+
+        // --- Smart Select ---
+
+        private async void SmartSelect_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(SettingsApiKey.Password))
+            {
+                MessageBox.Show("Please set your API key in Settings to use Smart Select.", "Safety Sentinel");
+                return;
             }
+            var criteria = ShowInputDialog("Smart Select",
+                "Describe the countries you want to watch:\n(e.g. \"politically stable, English-speaking, strong rule of law\")", "");
+            if (string.IsNullOrEmpty(criteria)) return;
+
+            SmartSelectBtn.IsEnabled = false;
+            UpdateStatus("Smart Select: consulting AI...");
+            try
+            {
+                var codes = await _intel.SmartSelectCountries(criteria);
+                if (codes.Count == 0)
+                {
+                    MessageBox.Show("AI returned no matching countries. Try different criteria.", "Safety Sentinel");
+                    return;
+                }
+                var existing = _db.GetWatchlist().Select(w => w.CountryCode)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                int added = 0;
+                var shortCriteria = criteria.Length > 40 ? criteria[..40] + "…" : criteria;
+                foreach (var code in codes)
+                {
+                    if (existing.Contains(code)) continue;
+                    if (!SeedData.AllWorldCountries.TryGetValue(code, out var name)) continue;
+                    _db.AddWatchlistItem(new WatchlistItem
+                    {
+                        CountryCode = code,
+                        CountryName = name,
+                        Reason = $"Smart Select: {shortCriteria}",
+                        ContinentAdded = false,
+                        AlertThreshold = 60,
+                        ChangeThreshold = 10
+                    });
+                    added++;
+                }
+                LoadWatchlist();
+                LoadExitPlans();
+                UpdateStatus($"Smart Select: added {added} countries to watchlist.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Smart Select failed: {ex.Message}", "Safety Sentinel");
+                UpdateStatus("Smart Select failed.");
+            }
+            finally
+            {
+                SmartSelectBtn.IsEnabled = true;
+            }
+        }
+
+        // --- Helpers ---
+
+        private static string NormalizeList(string input) =>
+            string.Join(", ", input
+                .Split(new[] { ',', '/', '\\' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Trim())
+                .Where(p => p.Length > 0));
+
+        private static string? ShowInputDialog(string title, string prompt, string defaultValue)
+        {
+            string? result = null;
+            var dialog = new Window
+            {
+                Title = title,
+                Width = 440,
+                Height = 170,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                Background = new SolidColorBrush(Color.FromRgb(0x0a, 0x0e, 0x17)),
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false
+            };
+            var grid = new Grid { Margin = new Thickness(16) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var lbl = new TextBlock
+            {
+                Text = prompt,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x9c, 0xa3, 0xaf)),
+                FontFamily = new FontFamily("Segoe UI"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            Grid.SetRow(lbl, 0);
+
+            var tb = new TextBox
+            {
+                Text = defaultValue,
+                Background = new SolidColorBrush(Color.FromRgb(0x11, 0x18, 0x27)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0xe5, 0xe7, 0xeb)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0x1e, 0x29, 0x3b)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(6, 4, 6, 4),
+                FontFamily = new FontFamily("Segoe UI"),
+                Margin = new Thickness(0, 0, 0, 10),
+                CaretBrush = new SolidColorBrush(Color.FromRgb(0x00, 0xff, 0x88))
+            };
+            tb.SelectAll();
+            Grid.SetRow(tb, 1);
+
+            var btnPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+            var btnOk = new Button
+            {
+                Content = "OK",
+                Padding = new Thickness(16, 6, 16, 6),
+                Margin = new Thickness(0, 0, 8, 0),
+                Background = new SolidColorBrush(Color.FromRgb(0x1a, 0x3a, 0x2a)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xff, 0x88)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0x00, 0xff, 0x88))
+            };
+            var btnCancel = new Button
+            {
+                Content = "Cancel",
+                Padding = new Thickness(16, 6, 16, 6),
+                Background = new SolidColorBrush(Color.FromRgb(0x1a, 0x1f, 0x2e)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x9c, 0xa3, 0xaf)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0x1e, 0x29, 0x3b))
+            };
+            btnPanel.Children.Add(btnOk);
+            btnPanel.Children.Add(btnCancel);
+            Grid.SetRow(btnPanel, 2);
+
+            btnOk.Click += (_, _) => { result = tb.Text; dialog.Close(); };
+            btnCancel.Click += (_, _) => { result = null; dialog.Close(); };
+            tb.KeyDown += (_, ke) =>
+            {
+                if (ke.Key == System.Windows.Input.Key.Return) { result = tb.Text; dialog.Close(); }
+            };
+            dialog.KeyDown += (_, ke) =>
+            {
+                if (ke.Key == System.Windows.Input.Key.Escape) dialog.Close();
+            };
+
+            grid.Children.Add(lbl);
+            grid.Children.Add(tb);
+            grid.Children.Add(btnPanel);
+            dialog.Content = grid;
+            dialog.ShowDialog();
+            return result;
         }
 
         #endregion
@@ -783,26 +1127,53 @@ namespace SafetySentinel
 
         private void LoadExitPlans()
         {
-            ExitPlanSelector.SelectedIndex = 0;
-            LoadExitPlanForSelection();
+            if (ExitPlanCountriesView == null) return;
+            var exitCountries = _db.GetWatchlist().Where(w => w.ExitPlan).ToList();
+            ExitPlanCountriesView.ItemsSource = exitCountries;
+
+            if (!exitCountries.Any())
+            {
+                ExitPlanTitle.Text = "← Right-click a country in the Watchlist and choose 'Toggle Exit Plan Destination'";
+                ExitPlanList.ItemsSource = null;
+                ExitPlanProgress.Text = "";
+            }
+            else
+            {
+                // keep current selection if still valid
+                LoadExitPlanForSelection();
+            }
         }
 
-        private void ExitPlanSelector_Changed(object sender, SelectionChangedEventArgs e)
+        private void ExitPlanCountry_Selected(object sender, SelectionChangedEventArgs e)
         {
             LoadExitPlanForSelection();
         }
 
         private void LoadExitPlanForSelection()
         {
-            if (ExitPlanList == null || ExitPlanSelector == null) return;
-            if (ExitPlanSelector.SelectedItem is ComboBoxItem item)
+            if (ExitPlanList == null || ExitPlanCountriesView == null) return;
+
+            if (ExitPlanCountriesView.SelectedItem is WatchlistItem item)
             {
-                string planName = item.Content.ToString()!;
-                var items = _db.GetExitPlanByName(planName);
-                ExitPlanList.ItemsSource = items;
-                int done = items.Count(i => i.Completed);
-                int total = items.Count;
-                ExitPlanProgress.Text = total > 0 ? $"{done}/{total} complete ({done * 100 / total}%)" : "No tasks";
+                ExitPlanTitle.Text = item.DisplayText;
+                var tasks = _db.GetExitPlanByName(item.DisplayText);
+                if (tasks.Count == 0)
+                {
+                    ExitPlanList.ItemsSource = null;
+                    ExitPlanProgress.Text = "Requirements for the selected destinations will be populated during the next scan.";
+                }
+                else
+                {
+                    ExitPlanList.ItemsSource = tasks;
+                    int done = tasks.Count(t => t.Completed);
+                    ExitPlanProgress.Text = $"{done}/{tasks.Count} complete ({done * 100 / tasks.Count}%)";
+                }
+            }
+            else
+            {
+                ExitPlanTitle.Text = "← Select a destination";
+                ExitPlanList.ItemsSource = null;
+                ExitPlanProgress.Text = "";
             }
         }
 
@@ -818,15 +1189,21 @@ namespace SafetySentinel
 
         private void CopyExitPlan_Click(object sender, RoutedEventArgs e)
         {
-            if (ExitPlanSelector.SelectedItem is ComboBoxItem item)
+            if (ExitPlanCountriesView.SelectedItem is not WatchlistItem item)
             {
-                string planName = item.Content.ToString()!;
-                var items = _db.GetExitPlanByName(planName);
-                var text = $"EXIT PLAN: {planName}\n" + string.Join("\n",
-                    items.Select(i => $"[{(i.Completed ? "✓" : " ")}] {i.Category}: {i.TaskTitle} — {i.TaskDescription}"));
-                Clipboard.SetText(text);
-                UpdateStatus("Exit plan copied to clipboard.");
+                MessageBox.Show("Select an exit plan destination first.", "Safety Sentinel");
+                return;
             }
+            var tasks = _db.GetExitPlanByName(item.DisplayText);
+            if (tasks.Count == 0)
+            {
+                MessageBox.Show("No tasks to copy yet. Run a scan to generate exit plan tasks.", "Safety Sentinel");
+                return;
+            }
+            var text = $"EXIT PLAN: {item.DisplayText}\n" + string.Join("\n",
+                tasks.Select(t => $"[{(t.Completed ? "✓" : " ")}] {t.Category}: {t.TaskTitle} — {t.TaskDescription}"));
+            Clipboard.SetText(text);
+            UpdateStatus("Exit plan copied to clipboard.");
         }
 
         #endregion
@@ -942,14 +1319,14 @@ namespace SafetySentinel
 
                 // Show progress bar and switch to Brief tab
                 ScanProgressPanel.Visibility = Visibility.Visible;
-                ScanStageText.Text = "Initiating secure connection...";
+                ScanStageText.Text = "Establishing secure connection...";
                 ScanProgressPercent.Text = "0%";
                 ScanProgressFill.Width = 0;
 
                 // Switch to Brief tab immediately and clear old content
                 MainTabControl.SelectedIndex = 1;
                 BriefContent.Text = "";
-                BriefDateText.Text = "Generating new brief — streaming live...";
+                BriefDateText.Text = "Streaming live intelligence brief...";
 
                 // Create a progress reporter that updates the UI from the streaming API
                 int progressPhase = 0; // 0=init, 1=searching, 2=writing
@@ -962,33 +1339,34 @@ namespace SafetySentinel
 
                         // Calculate progress based on phase
                         double percent;
-                        if (status.StartsWith("Sending"))
+                        if (status.StartsWith("Sending") || status.StartsWith("Establishing"))
                         {
                             percent = 5;
                         }
-                        else if (status.StartsWith("Web search"))
+                        else if (status.Contains("source") && status.Contains("...") && !status.StartsWith("Analyzing"))
                         {
                             progressPhase = 1;
-                            // Extract search number
-                            var parts = status.Split('#');
-                            if (parts.Length > 1 && int.TryParse(new string(parts[1].TakeWhile(char.IsDigit).ToArray()), out int num))
-                                searchCount = num;
+                            // Extract source number from "... (source N)"
+                            var srcIdx = status.IndexOf("source ");
+                            if (srcIdx >= 0)
+                            {
+                                var numStr = new string(status.Substring(srcIdx + 7).TakeWhile(char.IsDigit).ToArray());
+                                if (int.TryParse(numStr, out int num))
+                                    searchCount = num;
+                            }
                             percent = 10 + (searchCount * 4); // 10-50% for up to 10 searches
                         }
-                        else if (status.StartsWith("Processing search"))
+                        else if (status.StartsWith("Analyzing"))
                         {
                             percent = 10 + (searchCount * 4) + 2;
                         }
-                        else if (status.StartsWith("Searching:"))
-                        {
-                            percent = 10 + (searchCount * 4) + 1;
-                        }
-                        else if (status.StartsWith("Generating intelligence"))
+                        else if (status.StartsWith("Compiling threat"))
                         {
                             progressPhase = 2;
                             percent = 55;
                         }
-                        else if (status.StartsWith("Writing brief"))
+                        else if (status.StartsWith("Building") || status.StartsWith("Drafting") 
+                              || status.StartsWith("Compiling") || status.StartsWith("Assembling"))
                         {
                             // Parse the percentage from the status if available
                             var pctIdx = status.IndexOf('~');
@@ -1003,7 +1381,7 @@ namespace SafetySentinel
                             else
                                 percent = 60;
                         }
-                        else if (status.StartsWith("Brief complete"))
+                        else if (status.Contains("secured") || status.Contains("complete"))
                         {
                             percent = 100;
                         }
@@ -1033,8 +1411,11 @@ namespace SafetySentinel
                         SoundGenerator.PlayTelexTick(textDelta);
                     }));
 
+                // Stop typewriter sounds now that streaming is done
+                SoundGenerator.StopTypewriter();
+
                 // Complete the progress bar to 100%
-                ScanStageText.Text = "Brief complete.";
+                ScanStageText.Text = "Intelligence brief secured.";
                 ScanProgressPercent.Text = "100%";
                 await Dispatcher.InvokeAsync(() =>
                 {
@@ -1076,6 +1457,18 @@ namespace SafetySentinel
                     UpdateThreatLevelHeader();
                     LoadBriefHistory();
                     await LoadGlobeData();
+
+                    // Generate exit plan tasks only for watchlist entries flagged as Exit Plan destinations
+                    var exitPlanItems = _db.GetWatchlist().Where(w => w.ExitPlan).ToList();
+                    foreach (var wItem in exitPlanItems)
+                    {
+                        var planName = wItem.DisplayText;
+                        if (!_db.GetExitPlanByName(planName).Any())
+                        {
+                            await _intel.GenerateExitPlanTasks(wItem, scanProgress);
+                        }
+                    }
+                    Dispatcher.Invoke(LoadExitPlans);
 
                     UpdateStatus($"Brief generated: {brief.OverallThreatLevel} | {DateTime.Now:HH:mm}");
                 }

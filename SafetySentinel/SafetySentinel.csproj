@@ -22,6 +22,7 @@
   <ItemGroup>
     <Content Include="WebContent\**" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Teletext.wav" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\Sentinel.png" />

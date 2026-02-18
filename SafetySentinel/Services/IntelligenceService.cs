@@ -42,11 +42,10 @@ namespace SafetySentinel.Services
                 throw new InvalidOperationException("API key not configured. Set it in Settings.");
 
             var homeCountry = countries.FirstOrDefault(c => c.CountryCode == profile.CurrentCountry);
-            var destCountry = countries.FirstOrDefault(c => c.CountryCode == profile.DestinationCountry);
             var watchlist = _db.GetWatchlist();
 
             string systemPrompt = BuildSystemPrompt(profile);
-            string userPrompt = BuildBriefRequest(profile, homeCountry, destCountry, hotspots, watchlist, personalAlerts);
+            string userPrompt = BuildBriefRequest(profile, homeCountry, hotspots, watchlist, personalAlerts);
 
             var requestBody = new
             {
@@ -144,19 +143,32 @@ namespace SafetySentinel.Services
                                 {
                                     webSearchCount++;
                                     inServerToolUse = true;
-                                    progress?.Report($"Web search #{webSearchCount} in progress...");
+                                    string[] searchPhrases = {
+                                        "Contacting field sources",
+                                        "Gathering intelligence",
+                                        "Scanning classified feeds",
+                                        "Intercepting signals",
+                                        "Querying threat databases",
+                                        "Cross-referencing assets",
+                                        "Probing secure channels",
+                                        "Acquiring open-source intel",
+                                        "Tapping regional networks",
+                                        "Extracting data"
+                                    };
+                                    string phrase = searchPhrases[Math.Min(webSearchCount - 1, searchPhrases.Length - 1)];
+                                    progress?.Report($"{phrase}... (source {webSearchCount})");
                                 }
                             }
                             else if (blockType == "web_search_tool_result")
                             {
                                 inServerToolUse = false;
-                                progress?.Report($"Processing search #{webSearchCount} results...");
+                                progress?.Report($"Analyzing source {webSearchCount} findings...");
                             }
                             else if (blockType == "text")
                             {
                                 textBlockCount++;
                                 if (textBlockCount == 1)
-                                    progress?.Report("Generating intelligence brief...");
+                                    progress?.Report("Compiling threat assessment...");
                             }
                             break;
 
@@ -175,7 +187,14 @@ namespace SafetySentinel.Services
                                     if (chars % 500 < 20) // roughly every 500 chars
                                     {
                                         int estimatedPercent = Math.Min(95, 50 + (chars / 80));
-                                        progress?.Report($"Writing brief... ({chars:N0} chars, ~{estimatedPercent}%)");
+                                        string[] writePhrases = {
+                                            "Building executive brief",
+                                            "Drafting situation report",
+                                            "Compiling threat matrix",
+                                            "Assembling field report"
+                                        };
+                                        string wp = writePhrases[(chars / 500) % writePhrases.Length];
+                                        progress?.Report($"{wp}... (~{estimatedPercent}%)");
                                     }
                                 }
                             }
@@ -185,7 +204,7 @@ namespace SafetySentinel.Services
                                 var partial = evt["delta"]?["partial_json"]?.ToString();
                                 if (!string.IsNullOrEmpty(partial) && partial.Contains("query"))
                                 {
-                                    progress?.Report($"Searching: {partial.Trim('"', '{', '}')}...");
+                                    progress?.Report($"Investigating lead...");
                                 }
                             }
                             break;
@@ -198,7 +217,7 @@ namespace SafetySentinel.Services
                             break;
 
                         case "message_stop":
-                            progress?.Report("Brief complete.");
+                            progress?.Report("Intelligence brief secured.");
                             break;
                     }
                 }
@@ -318,7 +337,7 @@ SUBJECT PROFILE (HIGH-VALUE ASSET):
 - Age: {profile.Age}, Gender: {profile.Gender}, Ethnicity: {profile.Ethnicity}
 - Current Location: {profile.CurrentCity}, {profile.CurrentCountry}
 - Home Coordinates: {profile.HomeLatitude}, {profile.HomeLongitude}
-- Destination: {profile.DestinationCity}, {profile.DestinationCountry}
+- Destinations: see WATCHLIST below
 - Immigration Status: {profile.ImmigrationStatus}
 - Vehicle: {profile.VehicleMake} {profile.VehicleModel} ({profile.VehicleType})
 - Core Values: {profile.Values}
@@ -346,9 +365,9 @@ Start the brief with a header block:
   OVERALL THREAT LEVEL: [GREEN/YELLOW/ORANGE/RED]
 ═══════════════════════════════════════════════════
 
-For the THREAT DASHBOARD section, render each domain using DOS-style heatmap bars.
-Use █ for filled blocks and ░ for empty blocks. Each bar has exactly 20 blocks total.
-The number of filled █ blocks = score / 5 (rounded).
+For the THREAT DASHBOARD section, render each domain using ASCII heatmap bars.
+Use the hash character # for filled blocks and the middle dot · for empty blocks. Each bar has exactly 20 blocks total.
+The number of filled # blocks = score / 5 (rounded).
 After the bar, show a risk label, the threat level percentage, and a change indicator showing the direction and magnitude of change from the previous assessment.
 
 Use ↑ (up arrow) for increases and ↓ (down arrow) for decreases, followed by the number of points changed.
@@ -366,10 +385,10 @@ Risk labels based on score:
   86-100: Extreme Risk
 
 Example format:
-  Physical Security:   [████████████████░░░░] Severe Risk   Threat Level: 78%  ↑+3
-  Political Stability: [██████░░░░░░░░░░░░░░] Moderate Risk Threat Level: 30%  ↓-2
-  Economic Freedom:    [████████░░░░░░░░░░░░] Elevated Risk Threat Level: 42%  —
-  Genocide Risk:       [████████████░░░░░░░░] High Risk     Threat Level: 60%  ↑+5  (Stage 6/10)
+  Physical Security:   [################····] Severe Risk   Threat Level: 78%  ↑+3
+  Political Stability: [######··············] Moderate Risk Threat Level: 30%  ↓-2
+  Economic Freedom:    [########············] Elevated Risk Threat Level: 42%  —
+  Genocide Risk:       [############········] High Risk     Threat Level: 60%  ↑+5  (Stage 6/10)
 
 Use this exact format for all 8 threat domains plus GENOCIDE RISK and HIJACKING RISK lines.
 
@@ -414,7 +433,7 @@ genocide_stage: [0-10]";
         }
 
         private static string BuildBriefRequest(
-            UserProfile profile, CountryProfile? home, CountryProfile? dest,
+            UserProfile profile, CountryProfile? home,
             List<CrimeHotspot> hotspots, List<WatchlistItem> watchlist,
             List<PersonalAlert>? personalAlerts = null)
         {
@@ -440,15 +459,6 @@ genocide_stage: [0-10]";
                 sb.AppendLine();
             }
 
-            if (dest != null)
-            {
-                sb.AppendLine($"DESTINATION COUNTRY ({dest.CountryName} - {dest.CountryCode}):");
-                sb.AppendLine($"  Overall Threat: {dest.OverallSafetyScore}");
-                sb.AppendLine($"  Genocide Stage: {dest.GenocideStage}/10");
-                sb.AppendLine($"  CBDC Status: {dest.CbdcStatus}");
-                sb.AppendLine();
-            }
-
             if (hotspots.Count > 0)
             {
                 sb.AppendLine($"CRIME HOTSPOTS NEAR HVR ({hotspots.Count} active):");
@@ -461,11 +471,22 @@ genocide_stage: [0-10]";
 
             if (watchlist.Count > 0)
             {
-                sb.AppendLine("WATCHLIST COUNTRIES:");
+                sb.AppendLine("WATCHLIST — RESEARCH ONLY THESE COUNTRIES (exclude all others from the brief):");
                 foreach (var w in watchlist)
                 {
-                    sb.AppendLine($"  - {w.CountryName} ({w.CountryCode}): {w.Reason}");
+                    var location = string.IsNullOrEmpty(w.City)
+                        ? $"{w.CountryName} ({w.CountryCode})"
+                        : string.IsNullOrEmpty(w.StateProvince)
+                            ? $"{w.CountryName} — {w.City} ({w.CountryCode})"
+                            : $"{w.CountryName} — {w.City}, {w.StateProvince} ({w.CountryCode})";
+                    var reason = string.IsNullOrEmpty(w.Reason) ? "watchlist" : w.Reason;
+                    sb.AppendLine($"  - {location}: {reason}");
                 }
+                sb.AppendLine();
+            }
+            else
+            {
+                sb.AppendLine("WATCHLIST: No countries specified — provide general global threat overview.");
                 sb.AppendLine();
             }
 
@@ -495,8 +516,8 @@ genocide_stage: [0-10]";
    Political Stability: [██████░░░░░░░░░░░░░░] Moderate Risk Threat Level: 30%  ↓-2
    ... etc for all 8 domains plus Hijacking Risk
 
-3. SA SITUATIONAL AWARENESS
-4. DESTINATION MONITORING
+3. HOME COUNTRY SITUATIONAL AWARENESS
+4. WATCHLIST & DESTINATION MONITORING
 5. FINANCIAL SOVEREIGNTY WATCH
 6. TECHNOLOGY & PRIVACY
 7. PATTERN ANALYSIS
@@ -526,6 +547,178 @@ genocide_stage: [0-10]";
 End with updated THREAT_SCORES block.");
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Validate a country name that wasn't found in the local world country list.
+        /// Returns (code, name, isValid). Used as fallback when static lookup fails.
+        /// </summary>
+        public async Task<(string code, string name, bool valid)> ResolveCountryCode(string input)
+        {
+            if (string.IsNullOrEmpty(_apiKey))
+                return ("", input, false);
+
+            var requestBody = new
+            {
+                model = "claude-haiku-4-5-20251001",
+                max_tokens = 100,
+                messages = new[]
+                {
+                    new { role = "user", content = $"What is the ISO 3166-1 alpha-2 country code for \"{input}\"? Reply with ONLY valid JSON: {{\"code\":\"XX\",\"name\":\"Full Official Name\",\"valid\":true}}. If not a real country or territory, set valid:false and code to \"\"." }
+                }
+            };
+
+            try
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages")
+                {
+                    Content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json")
+                };
+                req.Headers.Add("x-api-key", _apiKey);
+                req.Headers.Add("anthropic-version", "2023-06-01");
+
+                var resp = await _http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode) return ("", input, false);
+
+                var json = await resp.Content.ReadAsStringAsync();
+                var obj = JObject.Parse(json);
+                var text = obj["content"]?[0]?["text"]?.ToString() ?? "";
+                var result = JObject.Parse(text);
+                bool isValid = result["valid"]?.Value<bool>() ?? false;
+                string code = result["code"]?.Value<string>() ?? "";
+                string name = result["name"]?.Value<string>() ?? input;
+                return (code.ToUpperInvariant(), name, isValid);
+            }
+            catch
+            {
+                return ("", input, false);
+            }
+        }
+
+        /// <summary>
+        /// Generate an exit plan checklist for a watchlist destination via AI.
+        /// Saves tasks to the database under the plan name matching item.DisplayText.
+        /// </summary>
+        public async Task GenerateExitPlanTasks(WatchlistItem item, IProgress<string>? progress = null)
+        {
+            if (string.IsNullOrEmpty(_apiKey)) return;
+
+            var destination = item.DisplayText;
+            progress?.Report($"Generating exit plan for {destination}...");
+
+            var prompt = $@"Generate a practical exit plan / relocation checklist for someone moving to or evacuating to: {destination}
+from South Africa.
+
+Include tasks covering Documents, Financial, and Logistics categories.
+Each task on its own line in this exact format:
+CATEGORY | TASK TITLE | TASK DESCRIPTION
+
+Example:
+Documents | Valid Passport | Ensure passport is valid for 6+ months beyond travel date
+Financial | Bank Account | Open a local bank account or set up international transfer
+Logistics | Accommodation | Research and book first 30 days accommodation
+
+Generate 8-15 tasks. Be specific to the destination country/city. Only output the task lines, no other text.";
+
+            var requestBody = new
+            {
+                model = _model,
+                max_tokens = 2000,
+                messages = new[] { new { role = "user", content = prompt } }
+            };
+
+            try
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages")
+                {
+                    Content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json")
+                };
+                req.Headers.Add("x-api-key", _apiKey);
+                req.Headers.Add("anthropic-version", "2023-06-01");
+
+                var resp = await _http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode) return;
+
+                var json = await resp.Content.ReadAsStringAsync();
+                var obj = JObject.Parse(json);
+                var text = obj["content"]?[0]?["text"]?.ToString() ?? "";
+
+                var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                int sortOrder = 1;
+                foreach (var line in lines)
+                {
+                    var parts = line.Split('|');
+                    if (parts.Length < 3) continue;
+                    var taskItem = new ExitPlanItem
+                    {
+                        PlanName = destination,
+                        Category = parts[0].Trim(),
+                        TaskTitle = parts[1].Trim(),
+                        TaskDescription = parts[2].Trim(),
+                        SortOrder = sortOrder++,
+                        Completed = false
+                    };
+                    _db.InsertExitPlanItem(taskItem);
+                }
+                progress?.Report($"Exit plan generated for {destination} ({sortOrder - 1} tasks).");
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"Exit plan generation failed for {destination}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Use AI to select countries matching user-described criteria.
+        /// Returns a list of ISO 3166-1 alpha-2 country codes.
+        /// </summary>
+        public async Task<List<string>> SmartSelectCountries(string criteria)
+        {
+            if (string.IsNullOrEmpty(_apiKey)) return new();
+
+            var requestBody = new
+            {
+                model = "claude-haiku-4-5-20251001",
+                max_tokens = 500,
+                messages = new[]
+                {
+                    new
+                    {
+                        role = "user",
+                        content = $@"Select countries that match this description: ""{criteria}""
+
+Return ONLY a JSON object with an array of ISO 3166-1 alpha-2 codes. Example:
+{{""codes"":[""US"",""DE"",""AU"",""NZ""]}}
+
+Be selective — only include countries that clearly and genuinely match the criteria.
+Use only real ISO codes. Reply with the JSON object only, no other text."
+                    }
+                }
+            };
+
+            try
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages")
+                {
+                    Content = new StringContent(JsonConvert.SerializeObject(requestBody), Encoding.UTF8, "application/json")
+                };
+                req.Headers.Add("x-api-key", _apiKey);
+                req.Headers.Add("anthropic-version", "2023-06-01");
+
+                var resp = await _http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode) return new();
+
+                var json = await resp.Content.ReadAsStringAsync();
+                var obj = JObject.Parse(json);
+                var text = obj["content"]?[0]?["text"]?.ToString() ?? "";
+                var result = JObject.Parse(text);
+                var codes = result["codes"]?.ToObject<List<string>>() ?? new();
+                return codes.Select(c => c.ToUpperInvariant()).ToList();
+            }
+            catch
+            {
+                return new();
+            }
         }
 
         /// <summary>

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -98,12 +98,12 @@
     <div id="tooltip"></div>
 
     <div id="continent-buttons">
-        <button class="continent-btn" data-continent="Africa" onclick="selectContinent(0, 20, 'Africa', this)">Africa</button>
-        <button class="continent-btn" data-continent="Asia" onclick="selectContinent(35, 90, 'Asia', this)">Asia</button>
-        <button class="continent-btn" data-continent="Europe" onclick="selectContinent(50, 15, 'Europe', this)">Europe</button>
-        <button class="continent-btn" data-continent="NAmerica" onclick="selectContinent(40, -100, 'N.America', this)">N.America</button>
-        <button class="continent-btn" data-continent="SAmerica" onclick="selectContinent(-15, -60, 'S.America', this)">S.America</button>
-        <button class="continent-btn" data-continent="Oceania" onclick="selectContinent(-25, 135, 'Oceania', this)">Oceania</button>
+        <button class="continent-btn" data-continent="Africa" onclick="flyToContinent('Africa', this)">Africa</button>
+        <button class="continent-btn" data-continent="Asia" onclick="flyToContinent('Asia', this)">Asia</button>
+        <button class="continent-btn" data-continent="Europe" onclick="flyToContinent('Europe', this)">Europe</button>
+        <button class="continent-btn" data-continent="NAmerica" onclick="flyToContinent('NAmerica', this)">N.America</button>
+        <button class="continent-btn" data-continent="SAmerica" onclick="flyToContinent('SAmerica', this)">S.America</button>
+        <button class="continent-btn" data-continent="Oceania" onclick="flyToContinent('Oceania', this)">Oceania</button>
         <button class="ctrl-btn" onclick="showAll()">🌐 Show All</button>
     </div>
 
@@ -150,6 +150,10 @@
 
         // Camera distance
         let cameraDistance = DEFAULT_ZOOM;
+
+        // Current globe orientation — tracked for fly-to starting position
+        let currentLat = 0;
+        let currentLon = 0;
 
         // Momentum / inertia
         let velocityX = 0;
@@ -254,6 +258,8 @@
             scene.add(new THREE.Points(starsGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.08, transparent: true, opacity: 0.6 })));
 
             // Set initial rotation to show Africa/Europe on load
+            currentLat = 0;
+            currentLon = 0;
             setGlobeToLatLon(0, 0);
 
             renderer.domElement.addEventListener('mousedown', onMouseDown);
@@ -366,12 +372,32 @@
         }
 
         function setGlobeToLatLon(lat, lon) {
+            currentLat = lat;
+            currentLon = lon;
             globeGroup.quaternion.copy(quaternionForLatLon(lat, lon));
         }
 
-        // Called from C# to set the home position (gentle smooth animation)
+        // Extract current lat/lon from the globe quaternion (needed after drag/momentum/auto-rotate
+        // which operate on quaternions directly and may leave currentLat/currentLon stale).
+        function getCurrentLatLon() {
+            const q = globeGroup.quaternion.clone().invert();
+            const v = new THREE.Vector3(0, 0, GLOBE_RADIUS).applyQuaternion(q);
+            const r = GLOBE_RADIUS;
+            const lat = Math.asin(Math.max(-1, Math.min(1, v.y / r))) / DEG;
+            const sinPhi = Math.sqrt(1 - (v.y/r)*(v.y/r));
+            let lon = 0;
+            if (sinPhi > 0.001) {
+                lon = Math.atan2(v.z, -v.x) / DEG - 180;
+            }
+            while (lon > 180) lon -= 360;
+            while (lon < -180) lon += 360;
+            return { lat, lon };
+        }
+
+        // Called from C# to set the home position (gentle smooth animation, zooms in close)
+        // Auto-rotate resumes after the fly animation completes.
         function setHomePosition(lat, lon) {
-            smoothFlyTo(lat, lon, DEFAULT_ZOOM, 0.012);
+            smoothFlyTo(lat, lon, CONTINENT_ZOOM, 0.012);
         }
 
         function getThreatColor(score) {
@@ -459,6 +485,29 @@
         }
 
         // ===== Continent Selection & Fly-To =====
+        // Bounding boxes: center lat/lon and zoom distance to fit the entire continent
+        const CONTINENT_BOUNDS = {
+            'Africa':   { lat:  2,  lon: 22,  zoom: 11.5 }, // 37°N to 35°S, 17°W to 51°E
+            'Asia':     { lat: 30,  lon: 85,  zoom: 10.5 }, // 1°N to 55°N, 25°E to 150°E — largest continent
+            'Europe':   { lat: 52,  lon: 18,  zoom: 11.0 }, // 35°N to 72°N, 10°W to 45°E
+            'NAmerica': { lat: 45,  lon: -100, zoom: 11.0 },// 7°N to 84°N, 170°W to 25°W
+            'SAmerica': { lat: -15, lon: -58,  zoom: 11.5 },// 12°N to 56°S, 82°W to 35°W
+            'Oceania':  { lat: -22, lon: 140,  zoom: 11.0 } // 10°N to 47°S, 110°E to 180°E
+        };
+
+        function flyToContinent(name, btn) {
+            document.querySelectorAll('.continent-btn').forEach(b => b.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+            closeSidebar();
+            velocityX = 0;
+            velocityY = 0;
+
+            const bounds = CONTINENT_BOUNDS[name];
+            if (bounds) {
+                smoothFlyTo(bounds.lat, bounds.lon, bounds.zoom);
+            }
+        }
+
         function selectContinent(lat, lon, label, btn) {
             document.querySelectorAll('.continent-btn').forEach(b => b.classList.remove('active'));
             if (btn) btn.classList.add('active');
@@ -475,28 +524,31 @@
             smoothFlyTo(0, 0, DEFAULT_ZOOM);
         }
 
-        // Smooth fly-to with slerp. speed parameter controls animation rate (default 0.025).
+        // Smooth fly-to using lat/lon interpolation. No quaternion slerp = no Z-roll.
         function smoothFlyTo(lat, lon, zoom, speed) {
             const step_speed = speed || 0.025;
             isAnimating = true;
-            const startQ = globeGroup.quaternion.clone();
-            const targetQ = quaternionForLatLon(lat, lon);
-
-            if (startQ.dot(targetQ) < 0) {
-                targetQ.set(-targetQ.x, -targetQ.y, -targetQ.z, -targetQ.w);
-            }
-
+            // Extract real lat/lon from quaternion (may be stale after drag/momentum)
+            const pos = getCurrentLatLon();
+            currentLat = pos.lat;
+            currentLon = pos.lon;
+            const startLat = currentLat;
+            const startLon = currentLon;
             const startZoom = cameraDistance;
-            const targetZoom = zoom;
+
+            // Find shortest longitude path (wrap around dateline)
+            let lonDiff = lon - startLon;
+            if (lonDiff > 180) lonDiff -= 360;
+            if (lonDiff < -180) lonDiff += 360;
 
             let t = 0;
             function step() {
                 t += step_speed;
                 if (t >= 1) {
                     t = 1;
-                    globeGroup.quaternion.copy(quaternionForLatLon(lat, lon));
-                    cameraDistance = targetZoom;
-                    targetZoomDistance = targetZoom;
+                    setGlobeToLatLon(lat, lon);
+                    cameraDistance = zoom;
+                    targetZoomDistance = zoom;
                     camera.position.set(0, 0, cameraDistance);
                     camera.lookAt(0, 0, 0);
                     updateMarkerScales();
@@ -505,8 +557,10 @@
                     return;
                 }
                 const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
-                globeGroup.quaternion.slerpQuaternions(startQ, targetQ, ease);
-                cameraDistance = startZoom + (targetZoom - startZoom) * ease;
+                const newLat = startLat + (lat - startLat) * ease;
+                const newLon = startLon + lonDiff * ease;
+                setGlobeToLatLon(newLat, newLon);
+                cameraDistance = startZoom + (zoom - startZoom) * ease;
                 targetZoomDistance = cameraDistance;
                 camera.position.set(0, 0, cameraDistance);
                 camera.lookAt(0, 0, 0);
@@ -534,7 +588,6 @@
         }
 
         // Get the pixel X boundaries of the globe's visible disc on screen.
-        // Returns { left, right, centerX } in client pixels.
         function getGlobeScreenBounds() {
             const vFov = camera.fov * DEG;
             const visibleHeight = 2 * Math.tan(vFov / 2) * cameraDistance;
@@ -551,23 +604,17 @@
         }
 
         // Determine drag mode based on mouse X position relative to globe edges.
-        // Z-roll zones start at 1.5× globe radius from center (well beyond the globe edge).
         function getDragMode(clientX) {
             const bounds = getGlobeScreenBounds();
-            const zZoneMargin = bounds.radiusPx * 0.5; // Z-zone starts half a radius beyond the globe edge
+            const zZoneMargin = bounds.radiusPx * 0.5;
             const zZoneLeft = bounds.left - zZoneMargin;
             const zZoneRight = bounds.right + zZoneMargin;
-            if (clientX < zZoneLeft) {
-                return 'zroll-left';
-            }
-            if (clientX > zZoneRight) {
-                return 'zroll-right';
-            }
+            if (clientX < zZoneLeft) return 'zroll-left';
+            if (clientX > zZoneRight) return 'zroll-right';
             return 'normal';
         }
 
         // Apply drag rotation: Y-axis (horizontal) and X-axis (vertical) in world space.
-        // This is the proven working approach — premultiply world-space quaternions.
         function applyDragRotation(dx, dy) {
             const radPerPx = getRadiansPerPixel();
             const zoomFactor = cameraDistance / DEFAULT_ZOOM;
@@ -590,7 +637,6 @@
         }
 
         // Apply Z-axis roll rotation (for Z-roll drag zones)
-        // side: 'zroll-left' or 'zroll-right' — right side needs inverted direction
         function applyZRollRotation(dy, side) {
             const radPerPx = getRadiansPerPixel();
             const direction = (side === 'zroll-right') ? -1 : 1;
@@ -604,7 +650,7 @@
             }
         }
 
-        // ===== Threat Sidebar =====
+// ===== Threat Sidebar =====
         function getThreatBarStyle(score) {
             const safeEnd = Math.max(0, 100 - score);
 
@@ -757,7 +803,21 @@
             raycaster.setFromCamera(mouse, camera);
             const hits = raycaster.intersectObjects(countryMarkers);
             if (hits.length > 0 && hits[0].object.userData && hits[0].object.userData.code) {
-                openSidebar(hits[0].object.userData);
+                const country = hits[0].object.userData;
+
+                // Stop auto-rotation so user can inspect
+                autoRotate = false;
+                velocityX = 0;
+                velocityY = 0;
+                var btn = document.getElementById('rotate-btn');
+                btn.classList.remove('active');
+                btn.textContent = '⟳ Rotation Off';
+
+                // Fly to the clicked country, centered on screen
+                smoothFlyTo(country.lat, country.lng, CONTINENT_ZOOM, 0.035);
+
+                // Open sidebar after a short delay for the fly animation to start
+                setTimeout(() => openSidebar(country), 100);
             }
         }
 

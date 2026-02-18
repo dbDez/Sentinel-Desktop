@@ -6,6 +6,129 @@ namespace SafetySentinel.Data
 {
     public static class SeedData
     {
+        /// <summary>
+        /// Complete list of all UN member states + key territories (ISO 3166-1 alpha-2 codes).
+        /// Used for watchlist country resolution and the Intelligence Exclusions view.
+        /// </summary>
+        public static readonly Dictionary<string, string> AllWorldCountries = new(StringComparer.OrdinalIgnoreCase)
+        {
+            // Africa
+            {"DZ","Algeria"},{"AO","Angola"},{"BJ","Benin"},{"BW","Botswana"},{"BF","Burkina Faso"},
+            {"BI","Burundi"},{"CV","Cabo Verde"},{"CM","Cameroon"},{"CF","Central African Republic"},
+            {"TD","Chad"},{"KM","Comoros"},{"CG","Congo"},{"CD","DR Congo"},{"CI","CÃ´te d'Ivoire"},
+            {"DJ","Djibouti"},{"EG","Egypt"},{"GQ","Equatorial Guinea"},{"ER","Eritrea"},{"SZ","Eswatini"},
+            {"ET","Ethiopia"},{"GA","Gabon"},{"GM","Gambia"},{"GH","Ghana"},{"GN","Guinea"},
+            {"GW","Guinea-Bissau"},{"KE","Kenya"},{"LS","Lesotho"},{"LR","Liberia"},{"LY","Libya"},
+            {"MG","Madagascar"},{"MW","Malawi"},{"ML","Mali"},{"MR","Mauritania"},{"MU","Mauritius"},
+            {"MA","Morocco"},{"MZ","Mozambique"},{"NA","Namibia"},{"NE","Niger"},{"NG","Nigeria"},
+            {"RW","Rwanda"},{"ST","Sao Tome and Principe"},{"SN","Senegal"},{"SC","Seychelles"},
+            {"SL","Sierra Leone"},{"SO","Somalia"},{"ZA","South Africa"},{"SS","South Sudan"},
+            {"SD","Sudan"},{"TZ","Tanzania"},{"TG","Togo"},{"TN","Tunisia"},{"UG","Uganda"},
+            {"ZM","Zambia"},{"ZW","Zimbabwe"},
+            // Asia
+            {"AF","Afghanistan"},{"AM","Armenia"},{"AZ","Azerbaijan"},{"BH","Bahrain"},{"BD","Bangladesh"},
+            {"BT","Bhutan"},{"BN","Brunei"},{"KH","Cambodia"},{"CN","China"},{"CY","Cyprus"},
+            {"GE","Georgia"},{"IN","India"},{"ID","Indonesia"},{"IR","Iran"},{"IQ","Iraq"},
+            {"IL","Israel"},{"JP","Japan"},{"JO","Jordan"},{"KZ","Kazakhstan"},{"KW","Kuwait"},
+            {"KG","Kyrgyzstan"},{"LA","Laos"},{"LB","Lebanon"},{"MY","Malaysia"},{"MV","Maldives"},
+            {"MN","Mongolia"},{"MM","Myanmar"},{"NP","Nepal"},{"KP","North Korea"},{"OM","Oman"},
+            {"PK","Pakistan"},{"PH","Philippines"},{"QA","Qatar"},{"SA","Saudi Arabia"},{"SG","Singapore"},
+            {"KR","South Korea"},{"LK","Sri Lanka"},{"SY","Syria"},{"TW","Taiwan"},{"TJ","Tajikistan"},
+            {"TH","Thailand"},{"TL","Timor-Leste"},{"TM","Turkmenistan"},{"AE","UAE"},{"UZ","Uzbekistan"},
+            {"VN","Vietnam"},{"YE","Yemen"},
+            // Europe
+            {"AL","Albania"},{"AD","Andorra"},{"AT","Austria"},{"BY","Belarus"},{"BE","Belgium"},
+            {"BA","Bosnia and Herzegovina"},{"BG","Bulgaria"},{"HR","Croatia"},{"CZ","Czech Republic"},
+            {"DK","Denmark"},{"EE","Estonia"},{"FI","Finland"},{"FR","France"},{"DE","Germany"},
+            {"GR","Greece"},{"HU","Hungary"},{"IS","Iceland"},{"IE","Ireland"},{"IT","Italy"},
+            {"XK","Kosovo"},{"LV","Latvia"},{"LI","Liechtenstein"},{"LT","Lithuania"},{"LU","Luxembourg"},
+            {"MT","Malta"},{"MD","Moldova"},{"MC","Monaco"},{"ME","Montenegro"},{"NL","Netherlands"},
+            {"MK","North Macedonia"},{"NO","Norway"},{"PL","Poland"},{"PT","Portugal"},{"RO","Romania"},
+            {"RU","Russia"},{"SM","San Marino"},{"RS","Serbia"},{"SK","Slovakia"},{"SI","Slovenia"},
+            {"ES","Spain"},{"SE","Sweden"},{"CH","Switzerland"},{"TR","Turkey"},{"UA","Ukraine"},
+            {"GB","United Kingdom"},{"VA","Vatican City"},
+            // North & Central America
+            {"AG","Antigua and Barbuda"},{"BS","Bahamas"},{"BB","Barbados"},{"BZ","Belize"},
+            {"CA","Canada"},{"CR","Costa Rica"},{"CU","Cuba"},{"DM","Dominica"},{"DO","Dominican Republic"},
+            {"SV","El Salvador"},{"GD","Grenada"},{"GT","Guatemala"},{"HT","Haiti"},{"HN","Honduras"},
+            {"JM","Jamaica"},{"MX","Mexico"},{"NI","Nicaragua"},{"PA","Panama"},{"KN","Saint Kitts and Nevis"},
+            {"LC","Saint Lucia"},{"VC","Saint Vincent and the Grenadines"},{"TT","Trinidad and Tobago"},
+            {"US","United States"},
+            // South America
+            {"AR","Argentina"},{"BO","Bolivia"},{"BR","Brazil"},{"CL","Chile"},{"CO","Colombia"},
+            {"EC","Ecuador"},{"GY","Guyana"},{"PY","Paraguay"},{"PE","Peru"},{"SR","Suriname"},
+            {"UY","Uruguay"},{"VE","Venezuela"},
+            // Oceania
+            {"AU","Australia"},{"FJ","Fiji"},{"KI","Kiribati"},{"MH","Marshall Islands"},
+            {"FM","Micronesia"},{"NR","Nauru"},{"NZ","New Zealand"},{"PW","Palau"},{"PG","Papua New Guinea"},
+            {"WS","Samoa"},{"SB","Solomon Islands"},{"TO","Tonga"},{"TV","Tuvalu"},{"VU","Vanuatu"},
+            // Middle East (additional)
+            {"PS","Palestine"},
+        };
+
+        /// <summary>
+        /// ISO codes grouped by continent, for bulk watchlist continent-select operations.
+        /// </summary>
+        public static readonly Dictionary<string, string[]> ContinentCountryCodes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Africa"] = new[] {
+                "DZ","AO","BJ","BW","BF","BI","CV","CM","CF","TD","KM","CG","CD","CI","DJ","EG",
+                "GQ","ER","SZ","ET","GA","GM","GH","GN","GW","KE","LS","LR","LY","MG","MW","ML",
+                "MR","MU","MA","MZ","NA","NE","NG","RW","ST","SN","SC","SL","SO","ZA","SS","SD",
+                "TZ","TG","TN","UG","ZM","ZW"
+            },
+            ["Asia"] = new[] {
+                "AF","AM","AZ","BH","BD","BT","BN","KH","CN","CY","GE","IN","ID","IR","IQ","IL",
+                "JP","JO","KZ","KW","KG","LA","LB","MY","MV","MN","MM","NP","KP","OM","PK","PH",
+                "PS","QA","SA","SG","KR","LK","SY","TW","TJ","TH","TL","TM","AE","UZ","VN","YE"
+            },
+            ["Europe"] = new[] {
+                "AL","AD","AT","BY","BE","BA","BG","HR","CZ","DK","EE","FI","FR","DE","GR","HU",
+                "IS","IE","IT","XK","LV","LI","LT","LU","MT","MD","MC","ME","NL","MK","NO","PL",
+                "PT","RO","RU","SM","RS","SK","SI","ES","SE","CH","TR","UA","GB","VA"
+            },
+            ["North America"] = new[] {
+                "AG","BS","BB","BZ","CA","CR","CU","DM","DO","SV","GD","GT","HT","HN","JM","MX",
+                "NI","PA","KN","LC","VC","TT","US"
+            },
+            ["South America"] = new[] {
+                "AR","BO","BR","CL","CO","EC","GY","PY","PE","SR","UY","VE"
+            },
+            ["Oceania"] = new[] {
+                "AU","FJ","KI","MH","FM","NR","NZ","PW","PG","WS","SB","TO","TV","VU"
+            }
+        };
+
+        /// <summary>
+        /// Try to find a country by full name (case-insensitive) or ISO code.
+        /// Returns (code, name) or null if not found.
+        /// </summary>
+        public static (string code, string name)? FindCountry(string input)
+        {
+            input = input.Trim();
+            // Try exact code match first
+            if (input.Length <= 3)
+            {
+                var upper = input.ToUpperInvariant();
+                if (AllWorldCountries.TryGetValue(upper, out var nameByCode))
+                    return (upper, nameByCode);
+            }
+            // Try name match (case-insensitive)
+            foreach (var kvp in AllWorldCountries)
+            {
+                if (string.Equals(kvp.Value, input, StringComparison.OrdinalIgnoreCase))
+                    return (kvp.Key, kvp.Value);
+            }
+            // Partial name match (starts with)
+            foreach (var kvp in AllWorldCountries)
+            {
+                if (kvp.Value.StartsWith(input, StringComparison.OrdinalIgnoreCase))
+                    return (kvp.Key, kvp.Value);
+            }
+            return null;
+        }
+
+
         public static List<CountryProfile> GetCountries()
         {
             long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -230,10 +353,12 @@ namespace SafetySentinel.Data
             };
         }
 
-        public static List<ExitPlanItem> GetExitPlanItems()
+        // GetExitPlanItems removed â€” exit plans are now AI-generated per watchlist destination on next scan.
+        #if NEVER_COMPILE_OLD_SEED
+        private static void _OldExitPlanSeed()
         {
             long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            return new List<ExitPlanItem>
+            var removed = new List<ExitPlanItem>
             {
                 // Plan A: USA (Primary)
                 new() { PlanName="Plan A: USA (Primary)", Category="Documents", SortOrder=1, TaskTitle="Valid Passport", TaskDescription="Ensure SA passport is valid for 6+ months beyond travel date", CreatedAt=now },
@@ -259,13 +384,13 @@ namespace SafetySentinel.Data
                 new() { PlanName="Plan B: Portugal (Backup)", Category="Documents", SortOrder=4, TaskTitle="Health insurance", TaskDescription="EU-valid health insurance policy", CreatedAt=now },
                 new() { PlanName="Plan B: Portugal (Backup)", Category="Financial", SortOrder=5, TaskTitle="EU bank account", TaskDescription="European bank account opened (e.g., Wise, N26)", CreatedAt=now },
                 new() { PlanName="Plan B: Portugal (Backup)", Category="Financial", SortOrder=6, TaskTitle="Proof of income", TaskDescription="Passive income documentation for visa", CreatedAt=now },
-                new() { PlanName="Plan B: Portugal (Backup)", Category="Financial", SortOrder=7, TaskTitle="EUR cash reserve", TaskDescription="EUR cash reserve (€3,000 minimum)", CreatedAt=now },
+                new() { PlanName="Plan B: Portugal (Backup)", Category="Financial", SortOrder=7, TaskTitle="EUR cash reserve", TaskDescription="EUR cash reserve (ï¿½3,000 minimum)", CreatedAt=now },
                 new() { PlanName="Plan B: Portugal (Backup)", Category="Logistics", SortOrder=8, TaskTitle="Accommodation research", TaskDescription="Lisbon/Porto accommodation options researched", CreatedAt=now },
                 new() { PlanName="Plan B: Portugal (Backup)", Category="Logistics", SortOrder=9, TaskTitle="Flight routes", TaskDescription="JNB?LIS flight routes and alternatives mapped", CreatedAt=now },
                 new() { PlanName="Plan B: Portugal (Backup)", Category="Logistics", SortOrder=10, TaskTitle="Language basics", TaskDescription="Basic Portuguese learning started", CreatedAt=now },
 
                 // Plan C: Emergency Evacuation
-                new() { PlanName="Plan C: Emergency Evacuation", Category="Immediate", SortOrder=1, TaskTitle="Go-bag ready", TaskDescription="72-hour go-bag at front door — passports, cash, meds, chargers", CreatedAt=now },
+                new() { PlanName="Plan C: Emergency Evacuation", Category="Immediate", SortOrder=1, TaskTitle="Go-bag ready", TaskDescription="72-hour go-bag at front door ï¿½ passports, cash, meds, chargers", CreatedAt=now },
                 new() { PlanName="Plan C: Emergency Evacuation", Category="Immediate", SortOrder=2, TaskTitle="Vehicle fueled", TaskDescription="Vehicle always above half tank", CreatedAt=now },
                 new() { PlanName="Plan C: Emergency Evacuation", Category="Immediate", SortOrder=3, TaskTitle="Cash stash", TaskDescription="ZAR, USD, EUR emergency cash accessible within 5 minutes", CreatedAt=now },
                 new() { PlanName="Plan C: Emergency Evacuation", Category="Immediate", SortOrder=4, TaskTitle="Family rally point", TaskDescription="Family emergency meeting point agreed", CreatedAt=now },
@@ -273,7 +398,7 @@ namespace SafetySentinel.Data
                 new() { PlanName="Plan C: Emergency Evacuation", Category="Routes", SortOrder=6, TaskTitle="Route to MZ border", TaskDescription="Route to Mozambique border (Komatipoort)", CreatedAt=now },
                 new() { PlanName="Plan C: Emergency Evacuation", Category="Routes", SortOrder=7, TaskTitle="Route to NA border", TaskDescription="Route to Namibia border (Vioolsdrif)", CreatedAt=now },
                 new() { PlanName="Plan C: Emergency Evacuation", Category="Routes", SortOrder=8, TaskTitle="Airport emergency route", TaskDescription="Fastest route to OR Tambo with alternatives", CreatedAt=now },
-                new() { PlanName="Plan C: Emergency Evacuation", Category="Comms", SortOrder=9, TaskTitle="Emergency contacts list", TaskDescription="Printed list — embassy numbers, family, lawyer", CreatedAt=now },
+                new() { PlanName="Plan C: Emergency Evacuation", Category="Comms", SortOrder=9, TaskTitle="Emergency contacts list", TaskDescription="Printed list ï¿½ embassy numbers, family, lawyer", CreatedAt=now },
                 new() { PlanName="Plan C: Emergency Evacuation", Category="Comms", SortOrder=10, TaskTitle="Satellite phone / eSIM", TaskDescription="Backup communication method (Starlink, eSIM, sat phone)", CreatedAt=now },
                 new() { PlanName="Plan C: Emergency Evacuation", Category="Comms", SortOrder=11, TaskTitle="Signal/WhatsApp groups", TaskDescription="Emergency family group chats tested", CreatedAt=now },
                 new() { PlanName="Plan C: Emergency Evacuation", Category="Survival", SortOrder=12, TaskTitle="First aid kit", TaskDescription="Comprehensive first aid kit in vehicle", CreatedAt=now },
@@ -281,5 +406,6 @@ namespace SafetySentinel.Data
                 new() { PlanName="Plan C: Emergency Evacuation", Category="Survival", SortOrder=14, TaskTitle="Self-defense plan", TaskDescription="Legal self-defense options prepared", CreatedAt=now },
             };
         }
+        #endif
     }
 }
