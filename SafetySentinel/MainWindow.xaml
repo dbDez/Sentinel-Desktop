@@ -188,21 +188,118 @@
             <Setter Property="FontFamily" Value="Segoe UI"/>
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Cursor" Value="Arrow"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GridViewColumnHeader">
+                        <Grid>
+                            <Border x:Name="HeaderBorder"
+                                    Background="#1a1f2e"
+                                    BorderBrush="#1e293b"
+                                    BorderThickness="0,0,0,1"
+                                    Padding="6,4">
+                                <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                  TextElement.Foreground="#9ca3af"
+                                                  TextElement.FontSize="11"
+                                                  TextElement.FontFamily="Segoe UI"
+                                                  Margin="0,0,8,0"/>
+                            </Border>
+                            <!-- PART_HeaderGripper restores drag-to-resize column width -->
+                            <Thumb x:Name="PART_HeaderGripper"
+                                   HorizontalAlignment="Right"
+                                   Width="8"
+                                   Margin="0,0,-4,0"
+                                   Cursor="SizeWE">
+                                <Thumb.Template>
+                                    <ControlTemplate TargetType="Thumb">
+                                        <Border Background="Transparent"/>
+                                    </ControlTemplate>
+                                </Thumb.Template>
+                            </Thumb>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="HeaderBorder" Property="Background" Value="#1e293b"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="HeaderBorder" Property="Background" Value="#1a1f2e"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
+        <!-- Default ListViewItem style: uses ContentPresenter so DataTemplate/DisplayMemberPath ListViews work -->
         <Style TargetType="ListViewItem">
             <Setter Property="Foreground" Value="#e5e7eb"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Padding" Value="2,1"/>
             <Setter Property="FontFamily" Value="Segoe UI"/>
-            <Style.Triggers>
-                <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#1e3a5e"/>
-                    <Setter Property="Foreground" Value="#00ff88"/>
-                </Trigger>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#1a2535"/>
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="Transparent" BorderThickness="0"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1e3a5e"/>
+                                <Setter Property="Foreground" Value="#00ff88"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsSelected" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Bd" Property="Background" Value="#1a2535"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- GridView-specific ListViewItem style: uses GridViewRowPresenter for column rendering.
+             Apply as ItemContainerStyle on any ListView that uses <ListView.View><GridView> -->
+        <Style x:Key="GridViewItemStyle" TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListViewItem">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="Transparent" BorderThickness="0"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <GridViewRowPresenter
+                                Columns="{Binding Path=View.Columns, RelativeSource={RelativeSource AncestorType={x:Type ListView}}}"
+                                Content="{TemplateBinding Content}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1e3a5e"/>
+                                <Setter Property="Foreground" Value="#00ff88"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsSelected" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Bd" Property="Background" Value="#1a2535"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="Label">
             <Setter Property="Foreground" Value="#9ca3af"/>
@@ -354,15 +451,18 @@
                 </StackPanel>
 
                 <!-- Threat Level Badge -->
-                <Border x:Name="ThreatLevelBadge" Grid.Column="1" CornerRadius="4" Padding="10,4"
-                        Background="{StaticResource AccentYellowBrush}" VerticalAlignment="Center" Margin="0,0,16,0">
-                    <TextBlock x:Name="ThreatLevelText" Text="YELLOW" FontWeight="Bold"
-                               Foreground="#0a0e17" FontSize="13" FontFamily="Consolas"/>
-                </Border>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Text="Home Country: " Foreground="#9ca3af" FontSize="11" VerticalAlignment="Center"/>
+                    <Border x:Name="ThreatLevelBadge" CornerRadius="4" Padding="10,4"
+                            Background="{StaticResource AccentYellowBrush}">
+                        <TextBlock x:Name="ThreatLevelText" Text="YELLOW" FontWeight="Bold"
+                                   Foreground="#0a0e17" FontSize="13" FontFamily="Consolas"/>
+                    </Border>
+                </StackPanel>
 
                 <!-- Hijack Risk Badge -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
-                    <TextBlock Text="HIJACK: " Foreground="#9ca3af" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBlock Text="Hijack Risk: " Foreground="#9ca3af" FontSize="11" VerticalAlignment="Center"/>
                     <Border x:Name="HijackRiskBadge" CornerRadius="4" Padding="8,3"
                             Background="{StaticResource AccentYellowBrush}">
                         <TextBlock x:Name="HijackRiskText" Text="MODERATE (45)" FontWeight="SemiBold"
@@ -370,9 +470,34 @@
                     </Border>
                 </StackPanel>
 
-                <!-- Country count -->
-                <TextBlock x:Name="CountryCount" Grid.Column="3" Text="54 countries monitored"
-                           Foreground="#9ca3af" FontSize="11" VerticalAlignment="Center"/>
+                <!-- Country count + API credits (open space column) -->
+                <Grid Grid.Column="3">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock x:Name="CountryCount" Grid.Column="0"
+                               Text="loading..." Foreground="#9ca3af" FontSize="11"
+                               VerticalAlignment="Center"/>
+
+                    <!-- API Credits centred in remaining space -->
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Orientation="Vertical">
+                        <TextBlock x:Name="ApiCreditsLabel" Text="INTELLIGENCE CREDITS"
+                                   FontSize="9" Foreground="#4b5563" FontFamily="Consolas"
+                                   HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="ApiCreditsAmount" Text="loading..."
+                                   FontSize="12" FontWeight="SemiBold" Foreground="#9ca3af"
+                                   FontFamily="Consolas" HorizontalAlignment="Center"/>
+                        <Button x:Name="TopUpBtn" Content="Top Up Credits"
+                                Click="TopupCredits_Click"
+                                Background="Transparent" Foreground="#4b5563"
+                                BorderBrush="#374151" BorderThickness="1"
+                                Padding="6,1" FontSize="9" Cursor="Hand"
+                                HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Grid>
 
                 <!-- Scan Now button -->
                 <Button Grid.Column="4" Content="&#x1F50D; Scan Now" Click="ScanNow_Click"
@@ -394,6 +519,24 @@
             <TabItem Header="&#x1F30D; Globe">
                 <Grid Background="#0a0e17">
                     <wv2:WebView2 x:Name="GlobeWebView" DefaultBackgroundColor="#0a0e17"/>
+
+                    <!-- Brief selector — top left overlay -->
+                    <Border VerticalAlignment="Top" HorizontalAlignment="Left"
+                            Margin="12,12,0,0" Background="#E8111827"
+                            CornerRadius="6" Padding="8,6"
+                            BorderBrush="#1e293b" BorderThickness="1">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="Viewing: " Foreground="#9ca3af" FontSize="10"
+                                       FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ComboBox x:Name="GlobeBriefSelector"
+                                      Background="#111827" Foreground="#e5e7eb"
+                                      BorderBrush="#1e293b" FontFamily="Consolas" FontSize="10"
+                                      Width="280" VerticalAlignment="Center"
+                                      SelectionChanged="GlobeBriefSelector_Changed"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Logo watermark — top right -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Right"
                                 Margin="0,12,16,0" IsHitTestVisible="False">
                         <Border Background="#111827" CornerRadius="8" Padding="8,6" Opacity="0.92"
@@ -793,6 +936,7 @@
                             </TextBlock>
                             <ListView x:Name="WatchlistView" Grid.Row="1" Background="#111827"
                                       Foreground="#e5e7eb" BorderThickness="0"
+                                      ItemContainerStyle="{StaticResource GridViewItemStyle}"
                                       MouseDoubleClick="WatchlistView_DoubleClick">
                                 <ListView.View>
                                     <GridView>
@@ -887,25 +1031,40 @@
                         <Grid Grid.Column="0">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
+                                <!-- Destinations list — flexible top half -->
+                                <RowDefinition Height="*" MinHeight="80"/>
+                                <!-- Splitter: only moves the boundary between Row 1 and Row 3 -->
+                                <RowDefinition Height="5"/>
+                                <!-- Auto-routes block — flexible bottom half, header always visible -->
+                                <RowDefinition Height="*" MinHeight="100"/>
                             </Grid.RowDefinitions>
+
                             <TextBlock Grid.Row="0" Text="MY EXIT DESTINATIONS" Foreground="#00ff88"
                                        FontFamily="Consolas" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,4"/>
                             <ListView x:Name="ExitPlanCountriesView" Grid.Row="1"
                                       Background="#111827" BorderThickness="0" Foreground="#e5e7eb"
                                       DisplayMemberPath="DisplayText"
                                       SelectionChanged="ExitPlanCountry_Selected"/>
-                            <TextBlock Grid.Row="2" Text="AUTO-SUGGESTED ROUTES" Foreground="#fbbf24"
-                                       FontFamily="Consolas" FontSize="11" FontWeight="SemiBold" Margin="0,8,0,4"/>
-                            <TextBlock Grid.Row="3" x:Name="AutoExitPlaceholder" TextWrapping="Wrap"
-                                       Text="To see auto-suggested exit routes, enter a valid address in your Profile and press Scan."
-                                       Foreground="#4a5568" FontSize="10" Margin="0,0,0,4"/>
-                            <ListView x:Name="AutoExitView" Grid.Row="4" MaxHeight="180"
-                                      Background="#111827" BorderThickness="0" Foreground="#9ca3af"
-                                      DisplayMemberPath="DisplayText"/>
+                            <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch"
+                                          Background="#1e293b" VerticalAlignment="Center" Cursor="SizeNS"
+                                          ResizeBehavior="PreviousAndNext"/>
+
+                            <!-- Auto-routes section nested in one * row so splitter only moves its top edge -->
+                            <Grid Grid.Row="3">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="AUTO-SUGGESTED ROUTES" Foreground="#fbbf24"
+                                           FontFamily="Consolas" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,4"/>
+                                <TextBlock Grid.Row="1" x:Name="AutoExitPlaceholder" TextWrapping="Wrap"
+                                           Text="To see auto-suggested exit routes, enter a valid address in your Profile and press Scan."
+                                           Foreground="#4a5568" FontSize="10" Margin="0,0,0,4"/>
+                                <ListView x:Name="AutoExitView" Grid.Row="2"
+                                          Background="#111827" BorderThickness="0" Foreground="#9ca3af"
+                                          DisplayMemberPath="DisplayText"/>
+                            </Grid>
                         </Grid>
 
                         <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center"
@@ -959,8 +1118,17 @@
                                        Foreground="#00ff88" FontFamily="Consolas" VerticalAlignment="Center"/>
                         </StackPanel>
 
+                        <!-- Values, Health, Skills — shown first so they're immediately visible -->
+                        <TextBlock Text="VALUES &amp; LIFESTYLE" Foreground="#fbbf24" FontWeight="Bold" Margin="0,0,0,8"/>
+                        <Label Content="Core Values"/>
+                        <TextBox x:Name="ProfileValues" TextWrapping="Wrap" AcceptsReturn="True" Height="50"/>
+                        <Label Content="Health Approach"/>
+                        <TextBox x:Name="ProfileHealth" TextWrapping="Wrap" AcceptsReturn="True" Height="50"/>
+                        <Label Content="Skills"/>
+                        <TextBox x:Name="ProfileSkills" TextWrapping="Wrap" AcceptsReturn="True" Height="50"/>
+
                         <!-- Personal Info -->
-                        <TextBlock Text="PERSONAL INFORMATION" Foreground="#fbbf24" FontWeight="Bold" Margin="0,0,0,8"/>
+                        <TextBlock Text="PERSONAL INFORMATION" Foreground="#fbbf24" FontWeight="Bold" Margin="0,16,0,8"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="150"/>
@@ -970,7 +1138,6 @@
                                 <ColumnDefinition Width="300"/>
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="36"/>
                                 <RowDefinition Height="36"/>
                                 <RowDefinition Height="36"/>
                                 <RowDefinition Height="36"/>
@@ -1034,15 +1201,6 @@
                             <TextBox x:Name="ProfileVehicleMakeModel" Grid.Row="7" Grid.Column="4"/>
                         </Grid>
 
-                        <!-- Values, Health, Skills -->
-                        <TextBlock Text="VALUES &amp; LIFESTYLE" Foreground="#fbbf24" FontWeight="Bold" Margin="0,16,0,8"/>
-                        <Label Content="Core Values"/>
-                        <TextBox x:Name="ProfileValues" TextWrapping="Wrap" AcceptsReturn="True" Height="50"/>
-                        <Label Content="Health Approach"/>
-                        <TextBox x:Name="ProfileHealth" TextWrapping="Wrap" Height="30"/>
-                        <Label Content="Skills"/>
-                        <TextBox x:Name="ProfileSkills" TextWrapping="Wrap" AcceptsReturn="True" Height="50"/>
-
                         <Button Content="&#x1F4BE; Save Profile" Click="SaveProfile_Click" Margin="0,16,0,0"
                                 Background="#1a3a2a" Foreground="#00ff88" BorderBrush="#00ff88"
                                 FontWeight="Bold" HorizontalAlignment="Left" Padding="20,8"/>
@@ -1077,6 +1235,12 @@
                         </ComboBox>
                         <Label Content="Google Maps API Key"/>
                         <TextBox x:Name="SettingsGoogleKey"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
+                            <Label Content="Monthly Budget ($)" VerticalAlignment="Center" Padding="0,0,6,0"/>
+                            <TextBox x:Name="SettingsApiMonthlyBudget" Width="80" Text="0.00" VerticalAlignment="Center"/>
+                            <TextBlock Text="  (0 = no limit — shows amount spent)"
+                                       Foreground="#6b7280" FontSize="10" VerticalAlignment="Center"/>
+                        </StackPanel>
 
                         <!-- Scan Configuration -->
                         <TextBlock Text="SCAN CONFIGURATION" Foreground="#fbbf24" FontWeight="Bold" Margin="0,16,0,8"/>

@@ -15,6 +15,8 @@ namespace SafetySentinel.Models
         public string Content { get; set; } = "";
         public string ActionItems { get; set; } = "";
         public string ChatHistory { get; set; } = "";
+        /// <summary>JSON array of CountryCode strings watched when this brief was generated.</summary>
+        public string WatchlistSnapshot { get; set; } = "";
         public long CreatedAt { get; set; }
 
         [Ignore]

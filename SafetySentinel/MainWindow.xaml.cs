@@ -93,7 +93,8 @@ namespace SafetySentinel
 
                 // Update header
                 UpdateThreatLevelHeader();
-                CountryCount.Text = $"{_countries.Count} countries monitored";
+                UpdateCountryCount();
+                UpdateApiUsageDisplay();
                 SettingsDbPath.Text = $"Database: {_db.GetDatabasePath()}";
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] DB path: {_db.GetDatabasePath()}");
 
@@ -162,10 +163,35 @@ namespace SafetySentinel
             }
         }
 
-        private async Task LoadGlobeData()
+        private async Task LoadGlobeData(ExecutiveBrief? briefContext = null)
         {
             try
             {
+                // Determine which countries are "active" (in the watchlist for this brief)
+                HashSet<string> activeCodes;
+                string briefLabel;
+
+                if (briefContext != null && !string.IsNullOrEmpty(briefContext.WatchlistSnapshot))
+                {
+                    var snapshotCodes = JsonConvert.DeserializeObject<List<string>>(briefContext.WatchlistSnapshot) ?? new();
+                    activeCodes = new HashSet<string>(snapshotCodes, StringComparer.OrdinalIgnoreCase);
+                    briefLabel = $"Threat Zones for Intelligence Report dated {briefContext.BriefDate:dd MMM yyyy} at {briefContext.BriefDate:HH:mm} hrs";
+                }
+                else
+                {
+                    // Live view: use current watchlist + always include home country
+                    var watchlistCodes = _db.GetWatchlist().Select(w => w.CountryCode).ToList();
+                    activeCodes = new HashSet<string>(watchlistCodes, StringComparer.OrdinalIgnoreCase);
+                    var latestBrief = _db.GetAllBriefs().OrderByDescending(b => b.BriefDate).FirstOrDefault();
+                    briefLabel = latestBrief != null
+                        ? $"Threat Zones for Intelligence Report dated {latestBrief.BriefDate:dd MMM yyyy} at {latestBrief.BriefDate:HH:mm} hrs"
+                        : "Threat Zones — no intelligence brief yet";
+                }
+
+                // Always include home country in the active set
+                if (!string.IsNullOrEmpty(_profile.CurrentCountry))
+                    activeCodes.Add(_profile.CurrentCountry);
+
                 var countryData = _countries.Select(c => new
                 {
                     code = c.CountryCode, name = c.CountryName,
@@ -176,10 +202,15 @@ namespace SafetySentinel
                     health = c.HealthEnvironment, social = c.SocialCohesion,
                     mobility = c.MobilityExit, infrastructure = c.Infrastructure,
                     cbdc = c.CbdcStatus, surveillance = c.SurveillanceScore,
-                    genocide = c.GenocideStage, cashFreedom = c.CashFreedomScore
+                    genocide = c.GenocideStage, cashFreedom = c.CashFreedomScore,
+                    active = activeCodes.Contains(c.CountryCode)
                 });
                 string countryJson = JsonConvert.SerializeObject(countryData);
                 await GlobeWebView.ExecuteScriptAsync($"loadCountryData({countryJson})");
+
+                // Brief date label
+                string escapedLabel = briefLabel.Replace("'", "\\'");
+                await GlobeWebView.ExecuteScriptAsync($"setBriefLabel('{escapedLabel}')");
 
                 var hotspotData = _hotspots.Select(h => new
                 {
@@ -495,6 +526,7 @@ namespace SafetySentinel
                 AddChatMessage(BriefChatMessages, "Agent", response, isUser: false);
                 _briefChatHistory.Add(("assistant", response));
                 SaveBriefChatHistory(); // auto-persist after each exchange
+                UpdateApiUsageDisplay();
             }
             catch (Exception ex)
             {
@@ -513,7 +545,34 @@ namespace SafetySentinel
 
         private void LoadBriefHistory()
         {
-            BriefHistoryList.ItemsSource = _db.GetAllBriefs();
+            var briefs = _db.GetAllBriefs();
+            BriefHistoryList.ItemsSource = briefs;
+            LoadGlobeBriefSelector(briefs);
+        }
+
+        private void LoadGlobeBriefSelector(List<ExecutiveBrief>? briefs = null)
+        {
+            briefs ??= _db.GetAllBriefs();
+            GlobeBriefSelector.SelectionChanged -= GlobeBriefSelector_Changed;
+            GlobeBriefSelector.Items.Clear();
+            GlobeBriefSelector.Items.Add(new ComboBoxItem { Content = "Current watchlist (live)", Tag = (ExecutiveBrief?)null });
+            foreach (var b in briefs.OrderByDescending(x => x.BriefDate))
+            {
+                GlobeBriefSelector.Items.Add(new ComboBoxItem
+                {
+                    Content = $"{b.BriefDate:dd MMM yyyy HH:mm}  [{b.OverallThreatLevel}]",
+                    Tag = b
+                });
+            }
+            GlobeBriefSelector.SelectedIndex = 0;
+            GlobeBriefSelector.SelectionChanged += GlobeBriefSelector_Changed;
+        }
+
+        private async void GlobeBriefSelector_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (GlobeBriefSelector.SelectedItem is not ComboBoxItem item) return;
+            var brief = item.Tag as ExecutiveBrief;
+            await LoadGlobeData(brief);
         }
 
         private void BriefHistory_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -565,6 +624,7 @@ namespace SafetySentinel
                 RemoveThinkingIndicator(HistoryChatMessages, thinkingPara);
                 AddChatMessage(HistoryChatMessages, "Agent", response, isUser: false);
                 _historyChatHistory.Add(("assistant", response));
+                UpdateApiUsageDisplay();
             }
             catch (Exception ex)
             {
@@ -825,6 +885,19 @@ namespace SafetySentinel
             var allInContinent = _db.GetWatchlist().Where(w => codesSet.Contains(w.CountryCode)).ToList();
             if (!allInContinent.Any()) { LoadWatchlist(); return; }
 
+            // Warn about countries with exit plan tasks
+            var exitPlanOnes = allInContinent.Where(w => w.ExitPlan || _db.GetExitPlanByName(w.DisplayText).Any()).ToList();
+            if (exitPlanOnes.Count > 0)
+            {
+                var names = string.Join(", ", exitPlanOnes.Take(3).Select(w => w.CountryName));
+                if (exitPlanOnes.Count > 3) names += $" and {exitPlanOnes.Count - 3} more";
+                var ans = MessageBox.Show(
+                    $"Warning: {names} ha{(exitPlanOnes.Count == 1 ? "s" : "ve")} exit plan data (tasks or destination flag).\n\n" +
+                    $"Removing from watchlist will also remove from Exit Plans.\n\nContinue removing {continent}?",
+                    "Exit Plan Data Found", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (ans == MessageBoxResult.No) { LoadWatchlist(); return; }
+            }
+
             var manualOnes = allInContinent.Where(w => !w.ContinentAdded).ToList();
             if (manualOnes.Count > 0)
             {
@@ -867,6 +940,8 @@ namespace SafetySentinel
                 .Select(kvp => new CountryViewItem { CountryName = kvp.Value, CountryCode = kvp.Key })
                 .ToList();
             ExclusionView.ItemsSource = excluded;
+
+            UpdateCountryCount();
         }
 
         // --- Watchlist context menu ---
@@ -945,12 +1020,142 @@ namespace SafetySentinel
         private void WatchlistView_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             if (WatchlistView.SelectedItem is not WatchlistItem item) return;
-            var input = ShowInputDialog("Edit Cities",
-                $"Cities for {item.CountryName} (comma or / separated):", item.City);
-            if (input == null) return;
-            item.City = NormalizeList(input);
-            _db.UpdateWatchlistItem(item);
-            LoadWatchlist();
+            ShowWatchlistEditDialog(item);
+        }
+
+        private void ShowWatchlistEditDialog(WatchlistItem item)
+        {
+            var dialog = new Window
+            {
+                Title = $"Edit — {item.CountryName}",
+                Width = 500, SizeToContent = SizeToContent.Height,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                Background = new SolidColorBrush(Color.FromRgb(0x0a, 0x0e, 0x17)),
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false
+            };
+            var grid = new Grid { Margin = new Thickness(16) };
+            for (int i = 0; i < 10; i++)
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            void AddRow(int row, string label, UIElement control)
+            {
+                var lbl = new TextBlock
+                {
+                    Text = label, VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x9c, 0xa3, 0xaf)),
+                    FontFamily = new FontFamily("Segoe UI"), Margin = new Thickness(0, 0, 8, 8)
+                };
+                Grid.SetRow(lbl, row); Grid.SetColumn(lbl, 0); grid.Children.Add(lbl);
+                Grid.SetRow(control, row); Grid.SetColumn(control, 1); grid.Children.Add(control);
+            }
+
+            TextBox MakeTextBox(string value) => new TextBox
+            {
+                Text = value,
+                Background = new SolidColorBrush(Color.FromRgb(0x11, 0x18, 0x27)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0xe5, 0xe7, 0xeb)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0x1e, 0x29, 0x3b)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(6, 4, 6, 4),
+                FontFamily = new FontFamily("Segoe UI"),
+                CaretBrush = new SolidColorBrush(Color.FromRgb(0x00, 0xff, 0x88)),
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+
+            var tbCity = MakeTextBox(item.City);
+            tbCity.ToolTip = "Separate multiple cities with commas";
+            var tbState = MakeTextBox(item.StateProvince);
+            var tbReason = MakeTextBox(item.Reason);
+            var cbExitPlan = new CheckBox
+            {
+                IsChecked = item.ExitPlan,
+                Foreground = new SolidColorBrush(Color.FromRgb(0xe5, 0xe7, 0xeb)),
+                FontFamily = new FontFamily("Segoe UI"),
+                Content = "Flag as Exit Plan destination",
+                Margin = new Thickness(0, 0, 0, 8),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            // Country name (read-only)
+            var tbCountry = MakeTextBox($"{item.CountryName} ({item.CountryCode})");
+            tbCountry.IsReadOnly = true;
+            tbCountry.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xff, 0x88));
+
+            AddRow(0, "Country:", tbCountry);
+            AddRow(1, "Cities:", tbCity);
+            AddRow(2, "State/Province:", tbState);
+            AddRow(3, "Reason:", tbReason);
+            Grid.SetRow(cbExitPlan, 4); Grid.SetColumn(cbExitPlan, 1); grid.Children.Add(cbExitPlan);
+
+            var btnPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 8, 0, 0)
+            };
+            Grid.SetRow(btnPanel, 5); Grid.SetColumnSpan(btnPanel, 2); grid.Children.Add(btnPanel);
+
+            bool saved = false;
+            var btnSave = MakeDialogButton("Save", "#1a3a2a", "#00ff88");
+            var btnCancel = MakeDialogButton("Cancel", "#1a1f2e", "#9ca3af");
+            btnPanel.Children.Add(btnSave);
+            btnPanel.Children.Add(btnCancel);
+
+            btnSave.Click += (_, _) =>
+            {
+                item.City = NormalizeList(tbCity.Text);
+                item.StateProvince = tbState.Text.Trim();
+                item.Reason = tbReason.Text.Trim();
+                item.ExitPlan = cbExitPlan.IsChecked == true;
+                saved = true;
+                dialog.Close();
+            };
+            btnCancel.Click += (_, _) => dialog.Close();
+            dialog.KeyDown += (_, ke) => { if (ke.Key == System.Windows.Input.Key.Escape) dialog.Close(); };
+
+            dialog.Content = grid;
+            dialog.ShowDialog();
+
+            if (saved)
+            {
+                _db.UpdateWatchlistItem(item);
+                LoadWatchlist();
+                LoadExitPlans();
+            }
+        }
+
+        /// <summary>Create a styled dialog button matching the app's dark theme.</summary>
+        private static Button MakeDialogButton(string text, string bgHex, string fgHex)
+        {
+            Color ParseHex(string hex) => (Color)ColorConverter.ConvertFromString(hex);
+            var btn = new Button
+            {
+                Content = text,
+                Margin = new Thickness(0, 0, 8, 0),
+                Background = new SolidColorBrush(ParseHex(bgHex)),
+                Foreground = new SolidColorBrush(ParseHex(fgHex)),
+                BorderBrush = new SolidColorBrush(ParseHex(fgHex)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(16, 6, 16, 6),
+                Cursor = System.Windows.Input.Cursors.Hand
+            };
+            // Override the default WPF button template to prevent system-color hover highlight
+            var factory = new FrameworkElementFactory(typeof(Border));
+            factory.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding("Background") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+            factory.SetBinding(Border.BorderBrushProperty, new System.Windows.Data.Binding("BorderBrush") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+            factory.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+            factory.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+            factory.SetBinding(Border.PaddingProperty, new System.Windows.Data.Binding("Padding") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+            var cp = new FrameworkElementFactory(typeof(ContentPresenter));
+            cp.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            cp.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+            factory.AppendChild(cp);
+            var template = new ControlTemplate(typeof(Button)) { VisualTree = factory };
+            btn.Template = template;
+            return btn;
         }
 
         private void ExclusionView_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -978,9 +1183,12 @@ namespace SafetySentinel
                 return;
             }
             var criteria = ShowInputDialog("Smart Select",
-                "Describe the countries you want to watch:\n(e.g. \"politically stable, English-speaking, strong rule of law\")", "");
+                "Describe the countries you want to watch:\n(e.g. \"politically stable, English-speaking, strong rule of law\")",
+                "", multiLine: true);
             if (string.IsNullOrEmpty(criteria)) return;
 
+            // Ensure API key is fresh
+            _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "");
             SmartSelectBtn.IsEnabled = false;
             UpdateStatus("Smart Select: consulting AI...");
             try
@@ -1012,6 +1220,7 @@ namespace SafetySentinel
                 }
                 LoadWatchlist();
                 LoadExitPlans();
+                UpdateApiUsageDisplay();
                 UpdateStatus($"Smart Select: added {added} countries to watchlist.");
             }
             catch (Exception ex)
@@ -1033,14 +1242,14 @@ namespace SafetySentinel
                 .Select(p => p.Trim())
                 .Where(p => p.Length > 0));
 
-        private static string? ShowInputDialog(string title, string prompt, string defaultValue)
+        private static string? ShowInputDialog(string title, string prompt, string defaultValue, bool multiLine = false)
         {
             string? result = null;
             var dialog = new Window
             {
                 Title = title,
-                Width = 440,
-                Height = 170,
+                Width = 500,
+                Height = multiLine ? 290 : 185,
                 WindowStartupLocation = WindowStartupLocation.CenterScreen,
                 Background = new SolidColorBrush(Color.FromRgb(0x0a, 0x0e, 0x17)),
                 ResizeMode = ResizeMode.NoResize,
@@ -1048,7 +1257,7 @@ namespace SafetySentinel
             };
             var grid = new Grid { Margin = new Thickness(16) };
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = multiLine ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var lbl = new TextBlock
@@ -1068,12 +1277,16 @@ namespace SafetySentinel
                 Foreground = new SolidColorBrush(Color.FromRgb(0xe5, 0xe7, 0xeb)),
                 BorderBrush = new SolidColorBrush(Color.FromRgb(0x1e, 0x29, 0x3b)),
                 BorderThickness = new Thickness(1),
-                Padding = new Thickness(6, 4, 6, 4),
+                Padding = new Thickness(6, 6, 6, 6),
                 FontFamily = new FontFamily("Segoe UI"),
                 Margin = new Thickness(0, 0, 0, 10),
-                CaretBrush = new SolidColorBrush(Color.FromRgb(0x00, 0xff, 0x88))
+                CaretBrush = new SolidColorBrush(Color.FromRgb(0x00, 0xff, 0x88)),
+                AcceptsReturn = multiLine,
+                TextWrapping = multiLine ? TextWrapping.Wrap : TextWrapping.NoWrap,
+                VerticalAlignment = multiLine ? VerticalAlignment.Stretch : VerticalAlignment.Top,
+                VerticalScrollBarVisibility = multiLine ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled
             };
-            tb.SelectAll();
+            if (!string.IsNullOrEmpty(defaultValue)) tb.SelectAll();
             Grid.SetRow(tb, 1);
 
             var btnPanel = new StackPanel
@@ -1081,33 +1294,21 @@ namespace SafetySentinel
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right
             };
-            var btnOk = new Button
-            {
-                Content = "OK",
-                Padding = new Thickness(16, 6, 16, 6),
-                Margin = new Thickness(0, 0, 8, 0),
-                Background = new SolidColorBrush(Color.FromRgb(0x1a, 0x3a, 0x2a)),
-                Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xff, 0x88)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x00, 0xff, 0x88))
-            };
-            var btnCancel = new Button
-            {
-                Content = "Cancel",
-                Padding = new Thickness(16, 6, 16, 6),
-                Background = new SolidColorBrush(Color.FromRgb(0x1a, 0x1f, 0x2e)),
-                Foreground = new SolidColorBrush(Color.FromRgb(0x9c, 0xa3, 0xaf)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x1e, 0x29, 0x3b))
-            };
+            var btnOk = MakeDialogButton("OK", "#1a3a2a", "#00ff88");
+            var btnCancel = MakeDialogButton("Cancel", "#1a1f2e", "#9ca3af");
             btnPanel.Children.Add(btnOk);
             btnPanel.Children.Add(btnCancel);
             Grid.SetRow(btnPanel, 2);
 
             btnOk.Click += (_, _) => { result = tb.Text; dialog.Close(); };
             btnCancel.Click += (_, _) => { result = null; dialog.Close(); };
-            tb.KeyDown += (_, ke) =>
+            if (!multiLine)
             {
-                if (ke.Key == System.Windows.Input.Key.Return) { result = tb.Text; dialog.Close(); }
-            };
+                tb.KeyDown += (_, ke) =>
+                {
+                    if (ke.Key == System.Windows.Input.Key.Return) { result = tb.Text; dialog.Close(); }
+                };
+            }
             dialog.KeyDown += (_, ke) =>
             {
                 if (ke.Key == System.Windows.Input.Key.Escape) dialog.Close();
@@ -1254,6 +1455,7 @@ namespace SafetySentinel
                 SettingsScanInterval.Text = sentinel["QuickScanIntervalHours"]?.ToString() ?? "2";
                 SettingsBriefTime.Text = sentinel["DailyBriefTime"]?.ToString() ?? "08:00";
                 SettingsAutoStart.IsChecked = sentinel["AutoStartScheduler"]?.ToObject<bool>() ?? false;
+                SettingsApiMonthlyBudget.Text = _profile.ApiMonthlyBudget.ToString("F2");
 
                 _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "");
 
@@ -1294,6 +1496,15 @@ namespace SafetySentinel
                 };
                 File.WriteAllText(configPath, JsonConvert.SerializeObject(config, Formatting.Indented));
                 _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "");
+
+                // Save monthly budget to profile
+                if (double.TryParse(SettingsApiMonthlyBudget.Text, out double budget))
+                {
+                    _profile.ApiMonthlyBudget = budget;
+                    _db.SaveProfile(_profile);
+                }
+                UpdateApiUsageDisplay();
+
                 UpdateStatus("Settings saved.");
                 MessageBox.Show("Settings saved successfully.", "Safety Sentinel", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -1314,6 +1525,21 @@ namespace SafetySentinel
             try
             {
                 _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "");
+
+                // Warn user if watchlist is large (high token/credit usage)
+                var watchlistForScan = _db.GetWatchlist();
+                if (watchlistForScan.Count > 20)
+                {
+                    var answer = MessageBox.Show(
+                        $"You have {watchlistForScan.Count} countries on your watchlist.\n\n" +
+                        "Gathering detailed intelligence on this many countries will use significantly more " +
+                        "API credits and may take longer to complete.\n\n" +
+                        "Would you like to proceed?",
+                        "Large Watchlist — High Credit Usage",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+                    if (answer == MessageBoxResult.No) return;
+                }
 
                 UpdateStatus("Generating intelligence brief...");
 
@@ -1471,6 +1697,7 @@ namespace SafetySentinel
                     Dispatcher.Invoke(LoadExitPlans);
 
                     UpdateStatus($"Brief generated: {brief.OverallThreatLevel} | {DateTime.Now:HH:mm}");
+                    UpdateApiUsageDisplay();
                 }
             }
             catch (Exception ex)
@@ -1623,6 +1850,50 @@ namespace SafetySentinel
         #region Helpers
 
         private void UpdateStatus(string msg) { StatusText.Text = msg; }
+
+        private void UpdateCountryCount()
+        {
+            var watchCount = _db.GetWatchlist().Count;
+            var totalWorld = Data.SeedData.AllWorldCountries.Count;
+            var notWatched = totalWorld - watchCount;
+            CountryCount.Text = watchCount > 0
+                ? $"{watchCount} watching · {notWatched} not watched"
+                : $"{totalWorld} world countries";
+        }
+
+        private void UpdateApiUsageDisplay()
+        {
+            var monthlySpend = _db.GetMonthlySpend();
+            var budget = _profile.ApiMonthlyBudget;
+            if (budget > 0)
+            {
+                var remaining = (decimal)budget - monthlySpend;
+                ApiCreditsLabel.Text = "CREDITS REMAINING";
+                ApiCreditsAmount.Text = remaining >= 0
+                    ? $"${remaining:F2} of ${budget:F2}"
+                    : $"${Math.Abs(remaining):F2} over budget";
+                ApiCreditsAmount.Foreground = new SolidColorBrush(remaining < 0
+                    ? Color.FromRgb(0xef, 0x44, 0x44)
+                    : remaining < (decimal)(budget * 0.2)
+                        ? Color.FromRgb(0xfb, 0xbf, 0x24)
+                        : Color.FromRgb(0x00, 0xff, 0x88));
+            }
+            else
+            {
+                ApiCreditsLabel.Text = "API SPEND THIS MONTH";
+                ApiCreditsAmount.Text = $"${monthlySpend:F4}";
+                ApiCreditsAmount.Foreground = new SolidColorBrush(Color.FromRgb(0x9c, 0xa3, 0xaf));
+            }
+        }
+
+        private void TopupCredits_Click(object sender, RoutedEventArgs e)
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "https://console.anthropic.com/settings/billing",
+                UseShellExecute = true
+            });
+        }
 
         private void UpdateThreatLevelHeader()
         {

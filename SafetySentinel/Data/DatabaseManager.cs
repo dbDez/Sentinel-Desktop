@@ -42,12 +42,17 @@ namespace SafetySentinel.Data
             _db.CreateTable<ActionItem>();
             _db.CreateTable<PersonalAlert>();
             _db.CreateTable<ExcludedLocation>();
+            _db.CreateTable<ApiUsageRecord>();
 
             // Migrations: add new columns to existing watchlist table
             try { _db.Execute("ALTER TABLE watchlist ADD COLUMN City TEXT NOT NULL DEFAULT ''"); } catch { }
             try { _db.Execute("ALTER TABLE watchlist ADD COLUMN StateProvince TEXT NOT NULL DEFAULT ''"); } catch { }
             try { _db.Execute("ALTER TABLE watchlist ADD COLUMN ExitPlan INTEGER NOT NULL DEFAULT 0"); } catch { }
             try { _db.Execute("ALTER TABLE watchlist ADD COLUMN ContinentAdded INTEGER NOT NULL DEFAULT 0"); } catch { }
+            // Migration: add ApiMonthlyBudget to user_profile
+            try { _db.Execute("ALTER TABLE user_profile ADD COLUMN ApiMonthlyBudget REAL NOT NULL DEFAULT 0"); } catch { }
+            // Migration: add WatchlistSnapshot to executive_briefs
+            try { _db.Execute("ALTER TABLE executive_briefs ADD COLUMN WatchlistSnapshot TEXT NOT NULL DEFAULT ''"); } catch { }
 
             // Remove old hardcoded exit plan seed data (new plans are AI-generated per watchlist entry)
             _db.Execute("DELETE FROM exit_plan_items WHERE PlanName LIKE 'Plan A:%' OR PlanName LIKE 'Plan B:%' OR PlanName LIKE 'Plan C:%'");
@@ -433,6 +438,31 @@ namespace SafetySentinel.Data
             }
 
             return (countries, hotspots, watchlist, avoidance, exitPlans);
+        }
+
+        #endregion
+
+        #region API Usage
+
+        public void AddApiUsage(ApiUsageRecord record)
+        {
+            _db.Insert(record);
+        }
+
+        /// <summary>Returns total spending for the current calendar month.</summary>
+        public decimal GetMonthlySpend()
+        {
+            var startOfMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            return _db.Table<ApiUsageRecord>()
+                .Where(r => r.Timestamp >= startOfMonth)
+                .ToList()
+                .Sum(r => r.Cost);
+        }
+
+        /// <summary>Returns total spending across all time.</summary>
+        public decimal GetTotalSpend()
+        {
+            return _db.Table<ApiUsageRecord>().ToList().Sum(r => r.Cost);
         }
 
         #endregion

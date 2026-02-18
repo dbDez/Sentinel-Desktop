@@ -28,6 +28,8 @@ namespace SafetySentinel.Models
         public string HealthApproach { get; set; } = "";
         public string Skills { get; set; } = "";
         public string ImmigrationStatus { get; set; } = "";
+        /// <summary>Monthly API spending budget in USD. 0 = no budget (shows amount spent).</summary>
+        public double ApiMonthlyBudget { get; set; } = 0.0;
         public long UpdatedAt { get; set; }
     }
 }

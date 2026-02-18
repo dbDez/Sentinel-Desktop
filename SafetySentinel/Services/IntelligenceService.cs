@@ -81,7 +81,8 @@ namespace SafetySentinel.Services
             }
 
             // Parse SSE stream
-            var content = await ReadStreamingResponse(response, progress, onTextDelta);
+            var (content, inputTokens, outputTokens) = await ReadStreamingResponse(response, progress, onTextDelta);
+            SaveUsage("brief", _model, inputTokens, outputTokens);
 
             // Determine threat level from content
             string threatLevel = "YELLOW";
@@ -89,13 +90,17 @@ namespace SafetySentinel.Services
             else if (content.Contains("ORANGE", StringComparison.OrdinalIgnoreCase)) threatLevel = "ORANGE";
             else if (content.Contains("GREEN", StringComparison.OrdinalIgnoreCase)) threatLevel = "GREEN";
 
+            // Snapshot current watchlist codes so historic briefs can filter the globe correctly
+            var watchlistCodes = _db.GetWatchlist().Select(w => w.CountryCode).ToList();
+
             var brief = new ExecutiveBrief
             {
                 BriefDate = DateTime.Now,
                 BriefType = "daily",
                 OverallThreatLevel = threatLevel,
                 Content = content,
-                ActionItems = ""
+                ActionItems = "",
+                WatchlistSnapshot = JsonConvert.SerializeObject(watchlistCodes)
             };
 
             _db.SaveBrief(brief);
@@ -106,12 +111,14 @@ namespace SafetySentinel.Services
         /// Read an SSE streaming response from the Anthropic API.
         /// Reports progress events like web searches and text generation.
         /// </summary>
-        private async Task<string> ReadStreamingResponse(HttpResponseMessage response, IProgress<string>? progress, Action<string>? onTextDelta = null)
+        private async Task<(string text, int inputTokens, int outputTokens)> ReadStreamingResponse(HttpResponseMessage response, IProgress<string>? progress, Action<string>? onTextDelta = null)
         {
             var textContent = new StringBuilder();
             int webSearchCount = 0;
             int textBlockCount = 0;
             bool inServerToolUse = false;
+            int inputTokens = 0;
+            int outputTokens = 0;
 
             using var stream = await response.Content.ReadAsStreamAsync();
             using var reader = new StreamReader(stream);
@@ -134,6 +141,15 @@ namespace SafetySentinel.Services
 
                     switch (eventType)
                     {
+                        case "message_start":
+                            inputTokens = evt["message"]?["usage"]?["input_tokens"]?.Value<int>() ?? 0;
+                            break;
+
+                        case "message_delta":
+                            var deltaUsageOut = evt["usage"]?["output_tokens"]?.Value<int>();
+                            if (deltaUsageOut.HasValue) outputTokens = deltaUsageOut.Value;
+                            break;
+
                         case "content_block_start":
                             var blockType = evt["content_block"]?["type"]?.ToString();
                             if (blockType == "server_tool_use")
@@ -227,7 +243,34 @@ namespace SafetySentinel.Services
                 }
             }
 
-            return textContent.Length > 0 ? textContent.ToString() : "No response content.";
+            return (textContent.Length > 0 ? textContent.ToString() : "No response content.", inputTokens, outputTokens);
+        }
+
+        /// <summary>
+        /// Calculate the estimated USD cost for a Claude API call.
+        /// Rates are per million tokens (MTok).
+        /// </summary>
+        private static decimal CalculateCost(string model, int inputTokens, int outputTokens)
+        {
+            decimal inputRate, outputRate;
+            if (model.Contains("opus")) { inputRate = 15m; outputRate = 75m; }
+            else if (model.Contains("haiku")) { inputRate = 0.80m; outputRate = 4m; }
+            else { inputRate = 3m; outputRate = 15m; } // sonnet default
+            return (inputTokens / 1_000_000m * inputRate) + (outputTokens / 1_000_000m * outputRate);
+        }
+
+        private void SaveUsage(string callType, string model, int inputTokens, int outputTokens)
+        {
+            if (inputTokens <= 0 && outputTokens <= 0) return;
+            _db.AddApiUsage(new Models.ApiUsageRecord
+            {
+                Timestamp = DateTime.Now,
+                Model = model,
+                InputTokens = inputTokens,
+                OutputTokens = outputTokens,
+                Cost = CalculateCost(model, inputTokens, outputTokens),
+                CallType = callType
+            });
         }
 
         /// <summary>
@@ -327,6 +370,13 @@ PRIMARY INTELLIGENCE SOURCES (in order of priority):
 6. NGO reports (Amnesty International, Human Rights Watch, Freedom House, Reporters Without Borders)
 7. Third-party open-source intelligence (OSINT) from credible internet sources
 
+COUNTRY-SPECIFIC INTELLIGENCE NOTES:
+South Africa: The South African government has documented patterns of minimizing and deliberately suppressing crime data targeting specific demographic groups — particularly farm attacks and violent crime against minority communities. The government's official crime statistics significantly undercount these incidents. For South Africa, treat all official government statistics with significant skepticism and weight non-governmental sources much more heavily:
+- Prioritize: AfriForum, IRR (Institute of Race Relations), TAU SA, Genocide Watch, HRW, Amnesty International
+- Prioritize: Reports from Australian, Dutch, British, and US media on South African conditions
+- Cross-reference government crime stats with hospital trauma unit data, insurance industry data, and NGO field reports
+- Farm attacks in particular are almost certainly underreported by a factor of 3-5x in official statistics
+
 DISCLAIMER (include at end of every brief):
 ""Intelligence sourced from government statistics, international monitoring bodies, academic research, and
 reputable media outlets. Third-party data may not be accurately reported by originating entities.
@@ -366,14 +416,25 @@ Start the brief with a header block:
 ═══════════════════════════════════════════════════
 
 For the THREAT DASHBOARD section, render each domain using ASCII heatmap bars.
-Use the hash character # for filled blocks and the middle dot · for empty blocks. Each bar has exactly 20 blocks total.
-The number of filled # blocks = score / 5 (rounded).
+Use ONLY these two characters: # for filled blocks and . (period) for empty blocks. Each bar has exactly 20 blocks total.
+The number of filled # blocks = score / 5 (rounded). Do NOT use block characters like █ or ░.
 After the bar, show a risk label, the threat level percentage, and a change indicator showing the direction and magnitude of change from the previous assessment.
 
-Use ↑ (up arrow) for increases and ↓ (down arrow) for decreases, followed by the number of points changed.
-If no change, use — (em dash) to indicate stable.
+Use ^ for increases and v for decreases, followed by the number of points changed.
+If no change, use - (hyphen) to indicate stable.
 
 The column header should say ""Threat Level"" (NOT ""Score"").
+
+IMPORTANT FORMATTING RULES:
+- Use ONLY standard ASCII characters (A-Z, 0-9, hyphen, period, hash, brackets, arrows ^v, parentheses)
+- Do NOT use Unicode bullets like ◆, ♦, ▸, ●, or any Unicode symbol not in standard ASCII
+- For bullet points use * or - only
+- For section separators use = signs only
+- INCIDENT DATING: When reporting specific incidents or events, ALWAYS include the date the event occurred
+  or was reported. Format: ""On [DATE], [event]..."" or ""[date]: [event]...""
+  BAD:  ""Three men hijacked a car near Parkmore""
+  GOOD: ""On 24 Dec 2025, three men hijacked a vehicle in broad daylight near Parkmore (Fourways area)""
+  This applies to ALL incidents: attacks, policy changes, statistics releases, arrests, court rulings, etc.
 
 Risk labels based on score:
   0-10:  Minimal Risk
@@ -385,10 +446,10 @@ Risk labels based on score:
   86-100: Extreme Risk
 
 Example format:
-  Physical Security:   [################····] Severe Risk   Threat Level: 78%  ↑+3
-  Political Stability: [######··············] Moderate Risk Threat Level: 30%  ↓-2
-  Economic Freedom:    [########············] Elevated Risk Threat Level: 42%  —
-  Genocide Risk:       [############········] High Risk     Threat Level: 60%  ↑+5  (Stage 6/10)
+  Physical Security:   [################....] Severe Risk   Threat Level: 78%  ^+3
+  Political Stability: [######..............] Moderate Risk Threat Level: 30%  v-2
+  Economic Freedom:    [########............] Elevated Risk Threat Level: 42%  -
+  Genocide Risk:       [############........] High Risk     Threat Level: 60%  ^+5  (Stage 6/10)
 
 Use this exact format for all 8 threat domains plus GENOCIDE RISK and HIJACKING RISK lines.
 
@@ -583,7 +644,25 @@ End with updated THREAT_SCORES block.");
                 var json = await resp.Content.ReadAsStringAsync();
                 var obj = JObject.Parse(json);
                 var text = obj["content"]?[0]?["text"]?.ToString() ?? "";
-                var result = JObject.Parse(text);
+
+                // Strip markdown code fences if present
+                var cleaned = text.Trim();
+                if (cleaned.StartsWith("```"))
+                {
+                    var firstNewline = cleaned.IndexOf('\n');
+                    var lastFence = cleaned.LastIndexOf("```");
+                    if (firstNewline >= 0 && lastFence > firstNewline)
+                        cleaned = cleaned.Substring(firstNewline + 1, lastFence - firstNewline - 1).Trim();
+                }
+                var startBrace = cleaned.IndexOf('{');
+                var endBrace = cleaned.LastIndexOf('}');
+                if (startBrace >= 0 && endBrace > startBrace)
+                    cleaned = cleaned.Substring(startBrace, endBrace - startBrace + 1);
+
+                SaveUsage("resolve", "claude-haiku-4-5-20251001",
+                    obj["usage"]?["input_tokens"]?.Value<int>() ?? 0,
+                    obj["usage"]?["output_tokens"]?.Value<int>() ?? 0);
+                var result = JObject.Parse(cleaned);
                 bool isValid = result["valid"]?.Value<bool>() ?? false;
                 string code = result["code"]?.Value<string>() ?? "";
                 string name = result["name"]?.Value<string>() ?? input;
@@ -641,6 +720,9 @@ Generate 8-15 tasks. Be specific to the destination country/city. Only output th
 
                 var json = await resp.Content.ReadAsStringAsync();
                 var obj = JObject.Parse(json);
+                SaveUsage("exitplan", _model,
+                    obj["usage"]?["input_tokens"]?.Value<int>() ?? 0,
+                    obj["usage"]?["output_tokens"]?.Value<int>() ?? 0);
                 var text = obj["content"]?[0]?["text"]?.ToString() ?? "";
 
                 var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
@@ -711,7 +793,26 @@ Use only real ISO codes. Reply with the JSON object only, no other text."
                 var json = await resp.Content.ReadAsStringAsync();
                 var obj = JObject.Parse(json);
                 var text = obj["content"]?[0]?["text"]?.ToString() ?? "";
-                var result = JObject.Parse(text);
+
+                // Strip markdown code fences if present (```json ... ```)
+                var cleaned = text.Trim();
+                if (cleaned.StartsWith("```"))
+                {
+                    var firstNewline = cleaned.IndexOf('\n');
+                    var lastFence = cleaned.LastIndexOf("```");
+                    if (firstNewline >= 0 && lastFence > firstNewline)
+                        cleaned = cleaned.Substring(firstNewline + 1, lastFence - firstNewline - 1).Trim();
+                }
+                // Extract just the JSON object in case there's surrounding text
+                var startBrace = cleaned.IndexOf('{');
+                var endBrace = cleaned.LastIndexOf('}');
+                if (startBrace >= 0 && endBrace > startBrace)
+                    cleaned = cleaned.Substring(startBrace, endBrace - startBrace + 1);
+
+                SaveUsage("smartselect", "claude-haiku-4-5-20251001",
+                    obj["usage"]?["input_tokens"]?.Value<int>() ?? 0,
+                    obj["usage"]?["output_tokens"]?.Value<int>() ?? 0);
+                var result = JObject.Parse(cleaned);
                 var codes = result["codes"]?.ToObject<List<string>>() ?? new();
                 return codes.Select(c => c.ToUpperInvariant()).ToList();
             }
@@ -805,6 +906,9 @@ Assets should conduct independent verification to confirm conditions on the grou
                 throw new Exception($"API error {response.StatusCode}: {responseJson}");
 
             var result = JObject.Parse(responseJson);
+            SaveUsage("chat", _model,
+                result["usage"]?["input_tokens"]?.Value<int>() ?? 0,
+                result["usage"]?["output_tokens"]?.Value<int>() ?? 0);
             return ExtractTextFromResponse(result);
         }
 
@@ -901,6 +1005,9 @@ Assets should conduct independent verification to confirm conditions on the grou
                 throw new Exception($"API error {response.StatusCode}: {responseJson}");
 
             var result = JObject.Parse(responseJson);
+            SaveUsage("chat", _model,
+                result["usage"]?["input_tokens"]?.Value<int>() ?? 0,
+                result["usage"]?["output_tokens"]?.Value<int>() ?? 0);
             return ExtractTextFromResponse(result);
         }
 

@@ -91,11 +91,19 @@
             pointer-events: none; z-index: 50;
         }
         #watermark img { filter: drop-shadow(0 0 8px rgba(0,255,136,0.3)); }
+
+        #brief-label {
+            position: absolute; top: 58px; left: 12px;
+            color: #4b5563; font-size: 10px; font-family: 'Consolas', monospace;
+            pointer-events: none; z-index: 40;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
     </style>
 </head>
 <body>
     <div id="globe-container"></div>
     <div id="tooltip"></div>
+    <div id="brief-label"></div>
 
     <div id="continent-buttons">
         <button class="continent-btn" data-continent="Africa" onclick="flyToContinent('Africa', this)">Africa</button>
@@ -429,6 +437,11 @@
         }
 
         // ===== Data Loading =====
+        function setBriefLabel(text) {
+            const el = document.getElementById('brief-label');
+            if (el) el.textContent = text;
+        }
+
         function loadCountryData(data) {
             countryData = data;
             countryMarkers.forEach(m => globeGroup.remove(m));
@@ -438,17 +451,22 @@
 
             data.forEach(country => {
                 const pos = latLonToVector3(country.lat, country.lng, GLOBE_RADIUS + 0.01);
-                const color = getThreatColor(country.overall);
+                // active = in the watchlist for this brief; inactive = faint grey dot only
+                const active = country.active !== false; // default true if not specified
+                const color = active ? getThreatColor(country.overall) : 0x2a3040;
+                const markerSize = active ? MARKER_SIZE : MARKER_SIZE * 0.5;
+                const opacity = active ? 1.0 : 0.25;
 
-                const geo = new THREE.SphereGeometry(MARKER_SIZE, 12, 12);
-                const mat = new THREE.MeshBasicMaterial({ color: color });
+                const geo = new THREE.SphereGeometry(markerSize, 12, 12);
+                const mat = new THREE.MeshBasicMaterial({ color: color, transparent: !active, opacity: opacity });
                 const marker = new THREE.Mesh(geo, mat);
                 marker.position.copy(pos);
                 marker.userData = country;
                 globeGroup.add(marker);
                 countryMarkers.push(marker);
 
-                if (country.overall >= 51) {
+                // Threat rings only for active watched countries with significant threat
+                if (active && country.overall >= 51) {
                     const ringGeo = new THREE.RingGeometry(MARKER_SIZE * 1.5, MARKER_SIZE * 2.2, 32);
                     const ringMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
                     const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -813,11 +831,9 @@
                 btn.classList.remove('active');
                 btn.textContent = '⟳ Rotation Off';
 
-                // Fly to the clicked country, centered on screen
-                smoothFlyTo(country.lat, country.lng, CONTINENT_ZOOM, 0.035);
-
-                // Open sidebar after a short delay for the fly animation to start
-                setTimeout(() => openSidebar(country), 100);
+                // Open sidebar immediately, then fly smoothly after panel appears
+                openSidebar(country);
+                setTimeout(() => smoothFlyTo(country.lat, country.lng, CONTINENT_ZOOM, 0.018), 150);
             }
         }
 
