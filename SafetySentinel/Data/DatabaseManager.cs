@@ -51,6 +51,8 @@ namespace SafetySentinel.Data
             try { _db.Execute("ALTER TABLE watchlist ADD COLUMN ContinentAdded INTEGER NOT NULL DEFAULT 0"); } catch { }
             // Migration: add ApiMonthlyBudget to user_profile
             try { _db.Execute("ALTER TABLE user_profile ADD COLUMN ApiMonthlyBudget REAL NOT NULL DEFAULT 0"); } catch { }
+            // Migration: add ApiBalanceSetAt to user_profile
+            try { _db.Execute("ALTER TABLE user_profile ADD COLUMN ApiBalanceSetAt INTEGER NOT NULL DEFAULT 0"); } catch { }
             // Migration: add WatchlistSnapshot to executive_briefs
             try { _db.Execute("ALTER TABLE executive_briefs ADD COLUMN WatchlistSnapshot TEXT NOT NULL DEFAULT ''"); } catch { }
 
@@ -463,6 +465,15 @@ namespace SafetySentinel.Data
         public decimal GetTotalSpend()
         {
             return _db.Table<ApiUsageRecord>().ToList().Sum(r => r.Cost);
+        }
+
+        /// <summary>Returns total spending since the given date (used for balance-based tracking).</summary>
+        public decimal GetSpendSince(DateTime from)
+        {
+            return _db.Table<ApiUsageRecord>()
+                .Where(r => r.Timestamp >= from)
+                .ToList()
+                .Sum(r => r.Cost);
         }
 
         #endregion

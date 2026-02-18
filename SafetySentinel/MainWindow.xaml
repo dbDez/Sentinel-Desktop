@@ -520,22 +520,6 @@
                 <Grid Background="#0a0e17">
                     <wv2:WebView2 x:Name="GlobeWebView" DefaultBackgroundColor="#0a0e17"/>
 
-                    <!-- Brief selector — top left overlay -->
-                    <Border VerticalAlignment="Top" HorizontalAlignment="Left"
-                            Margin="12,12,0,0" Background="#E8111827"
-                            CornerRadius="6" Padding="8,6"
-                            BorderBrush="#1e293b" BorderThickness="1">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="Viewing: " Foreground="#9ca3af" FontSize="10"
-                                       FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <ComboBox x:Name="GlobeBriefSelector"
-                                      Background="#111827" Foreground="#e5e7eb"
-                                      BorderBrush="#1e293b" FontFamily="Consolas" FontSize="10"
-                                      Width="280" VerticalAlignment="Center"
-                                      SelectionChanged="GlobeBriefSelector_Changed"/>
-                        </StackPanel>
-                    </Border>
-
                     <!-- Logo watermark — top right -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Right"
                                 Margin="0,12,16,0" IsHitTestVisible="False">
@@ -978,6 +962,7 @@
                             </TextBlock>
                             <ListView x:Name="ExclusionView" Grid.Row="1" Background="#111827"
                                       Foreground="#e5e7eb" BorderThickness="0"
+                                      ItemContainerStyle="{StaticResource GridViewItemStyle}"
                                       MouseDoubleClick="ExclusionView_DoubleClick">
                                 <ListView.View>
                                     <GridView>
@@ -1236,9 +1221,9 @@
                         <Label Content="Google Maps API Key"/>
                         <TextBox x:Name="SettingsGoogleKey"/>
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
-                            <Label Content="Monthly Budget ($)" VerticalAlignment="Center" Padding="0,0,6,0"/>
+                            <Label Content="Credit Balance ($)" VerticalAlignment="Center" Padding="0,0,6,0"/>
                             <TextBox x:Name="SettingsApiMonthlyBudget" Width="80" Text="0.00" VerticalAlignment="Center"/>
-                            <TextBlock Text="  (0 = no limit — shows amount spent)"
+                            <TextBlock Text="  Enter your current Anthropic balance — spend tracked from save date"
                                        Foreground="#6b7280" FontSize="10" VerticalAlignment="Center"/>
                         </StackPanel>
 
@@ -1274,6 +1259,23 @@
                 </ScrollViewer>
             </TabItem>
         </TabControl>
+
+        <!-- Globe brief selector — floats over the tab strip area (top-right), shown only on Globe tab -->
+        <Border x:Name="GlobeControlsBar" Grid.Row="1" Panel.ZIndex="10"
+                VerticalAlignment="Top" HorizontalAlignment="Right"
+                Margin="0,4,12,0" Visibility="Visible"
+                Background="#111827" CornerRadius="4" Padding="6,3"
+                BorderBrush="#1e293b" BorderThickness="1">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Brief: " Foreground="#9ca3af" FontSize="10"
+                           FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <ComboBox x:Name="GlobeBriefSelector"
+                          Background="#111827" Foreground="#e5e7eb"
+                          BorderBrush="#374151" FontFamily="Consolas" FontSize="10"
+                          Width="240" VerticalAlignment="Center"
+                          SelectionChanged="GlobeBriefSelector_Changed"/>
+            </StackPanel>
+        </Border>
 
         <!-- ============ STATUS BAR ============ -->
         <Border Grid.Row="2" Background="#111827" BorderBrush="#1e293b" BorderThickness="0,1,0,0">

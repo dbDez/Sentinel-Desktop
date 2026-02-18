@@ -249,6 +249,8 @@ namespace SafetySentinel
             if (e.OriginalSource is TabControl)
             {
                 Task.Run(() => SoundGenerator.PlayTabClick());
+                GlobeControlsBar.Visibility = MainTabControl.SelectedIndex == 0
+                    ? Visibility.Visible : Visibility.Collapsed;
             }
         }
 
@@ -1497,10 +1499,13 @@ namespace SafetySentinel
                 File.WriteAllText(configPath, JsonConvert.SerializeObject(config, Formatting.Indented));
                 _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "");
 
-                // Save monthly budget to profile
+                // Save credit balance to profile; record timestamp so spend is tracked from this point
                 if (double.TryParse(SettingsApiMonthlyBudget.Text, out double budget))
                 {
+                    bool balanceChanged = Math.Abs(budget - _profile.ApiMonthlyBudget) > 0.001;
                     _profile.ApiMonthlyBudget = budget;
+                    if (balanceChanged && budget > 0)
+                        _profile.ApiBalanceSetAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     _db.SaveProfile(_profile);
                 }
                 UpdateApiUsageDisplay();
@@ -1863,23 +1868,28 @@ namespace SafetySentinel
 
         private void UpdateApiUsageDisplay()
         {
-            var monthlySpend = _db.GetMonthlySpend();
-            var budget = _profile.ApiMonthlyBudget;
-            if (budget > 0)
+            var balance = _profile.ApiMonthlyBudget;
+            if (balance > 0)
             {
-                var remaining = (decimal)budget - monthlySpend;
+                // Track spend since the user last set their balance
+                var balanceSetDate = _profile.ApiBalanceSetAt > 0
+                    ? DateTimeOffset.FromUnixTimeMilliseconds(_profile.ApiBalanceSetAt).UtcDateTime
+                    : DateTime.MinValue;
+                var spentSince = _db.GetSpendSince(balanceSetDate);
+                var remaining = (decimal)balance - spentSince;
                 ApiCreditsLabel.Text = "CREDITS REMAINING";
                 ApiCreditsAmount.Text = remaining >= 0
-                    ? $"${remaining:F2} of ${budget:F2}"
-                    : $"${Math.Abs(remaining):F2} over budget";
+                    ? $"${remaining:F2} of ${balance:F2}"
+                    : $"${Math.Abs(remaining):F2} over balance";
                 ApiCreditsAmount.Foreground = new SolidColorBrush(remaining < 0
                     ? Color.FromRgb(0xef, 0x44, 0x44)
-                    : remaining < (decimal)(budget * 0.2)
+                    : remaining < (decimal)(balance * 0.2)
                         ? Color.FromRgb(0xfb, 0xbf, 0x24)
                         : Color.FromRgb(0x00, 0xff, 0x88));
             }
             else
             {
+                var monthlySpend = _db.GetMonthlySpend();
                 ApiCreditsLabel.Text = "API SPEND THIS MONTH";
                 ApiCreditsAmount.Text = $"${monthlySpend:F4}";
                 ApiCreditsAmount.Foreground = new SolidColorBrush(Color.FromRgb(0x9c, 0xa3, 0xaf));
