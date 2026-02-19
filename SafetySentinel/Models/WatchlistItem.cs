@@ -29,5 +29,7 @@ namespace SafetySentinel.Models
                 : string.IsNullOrEmpty(StateProvince)
                     ? $"{CountryName} — {City} ({CountryCode})"
                     : $"{CountryName} — {City}, {StateProvince} ({CountryCode})";
+
+        public override string ToString() => DisplayText;
     }
 }

@@ -20,5 +20,7 @@ namespace SafetySentinel.Models
         public double Longitude { get; set; }
         public long ExpiresAt { get; set; }
         public long CreatedAt { get; set; }
+        /// <summary>Links this event to a CrimeHotspot. 0 = not linked.</summary>
+        public int HotspotId { get; set; }
     }
 }

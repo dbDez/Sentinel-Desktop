@@ -35,7 +35,7 @@
             <Setter Property="Padding" Value="6,4"/>
             <Setter Property="FontFamily" Value="Segoe UI"/>
             <Setter Property="CaretBrush" Value="#00ff88"/>
-            <Setter Property="SelectionBrush" Value="#3300ff88"/>
+            <Setter Property="SelectionBrush" Value="#7700ff88"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
@@ -60,6 +60,49 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- Watermark TextBox — shows Tag text as greyed placeholder when empty and unfocused -->
+        <Style x:Key="WatermarkTextBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="border" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                CornerRadius="2" SnapsToDevicePixels="True">
+                            <Grid>
+                                <TextBlock x:Name="watermark"
+                                           Text="{TemplateBinding Tag}"
+                                           Foreground="#4b5563" FontStyle="Italic" FontSize="11"
+                                           VerticalAlignment="Top"
+                                           Margin="{TemplateBinding Padding}"
+                                           IsHitTestVisible="False"
+                                           Visibility="Collapsed"/>
+                                <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
+                                              HorizontalScrollBarVisibility="Hidden"
+                                              VerticalScrollBarVisibility="Hidden"
+                                              Margin="{TemplateBinding Padding}"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="#00ff88"/>
+                                <Setter TargetName="border" Property="Background" Value="#0d1520"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="#2a3a4e"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="Text" Value=""/>
+                                    <Condition Property="IsFocused" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="watermark" Property="Visibility" Value="Visible"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="Button">
             <Setter Property="Background" Value="#1a1f2e"/>
             <Setter Property="Foreground" Value="#e5e7eb"/>
@@ -420,6 +463,75 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+        <!-- Fix scrollbar corner rectangle (white square between two scrollbars) -->
+        <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#111827"/>
+
+        <!-- Dark-themed ContextMenu — removes the Windows chrome double-window effect -->
+        <Style TargetType="{x:Type ContextMenu}" BasedOn="{x:Null}">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Foreground" Value="#e5e7eb"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ContextMenu}">
+                        <Border Background="#111827" BorderBrush="#374151" BorderThickness="1" CornerRadius="4"
+                                Padding="2">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" Opacity="0.55" BlurRadius="10" ShadowDepth="3"/>
+                            </Border.Effect>
+                            <ItemsPresenter/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Dark-themed MenuItem -->
+        <Style TargetType="{x:Type MenuItem}" BasedOn="{x:Null}">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Foreground" Value="#e5e7eb"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type MenuItem}">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="3" Margin="2,1">
+                            <ContentPresenter x:Name="HeaderHost"
+                                              ContentSource="Header"
+                                              Margin="{TemplateBinding Padding}"
+                                              RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1e293b"/>
+                                <Setter Property="Foreground" Value="#e5e7eb"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#4b5563"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Dark-themed Separator for menus -->
+        <Style TargetType="{x:Type Separator}" BasedOn="{x:Null}">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Margin" Value="6,3"/>
+            <Setter Property="Background" Value="#374151"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Separator}">
+                        <Rectangle Height="1" Fill="{TemplateBinding Background}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -490,7 +602,7 @@
                         <TextBlock x:Name="ApiCreditsAmount" Text="loading..."
                                    FontSize="12" FontWeight="SemiBold" Foreground="#9ca3af"
                                    FontFamily="Consolas" HorizontalAlignment="Center"/>
-                        <Button x:Name="TopUpBtn" Content="Top Up Credits"
+                        <Button x:Name="TopUpBtn" Content="Billing"
                                 Click="TopupCredits_Click"
                                 Background="Transparent" Foreground="#4b5563"
                                 BorderBrush="#374151" BorderThickness="1"
@@ -519,6 +631,9 @@
             <TabItem Header="&#x1F30D; Globe">
                 <Grid Background="#0a0e17">
                     <wv2:WebView2 x:Name="GlobeWebView" DefaultBackgroundColor="#0a0e17"/>
+
+                    <!-- WPF init cover — hides WebView2 blank during startup; fades out once HTML boot sequence is running -->
+                    <Grid x:Name="GlobeBootOverlay" Background="#0a0e17" Panel.ZIndex="10"/>
 
                     <!-- Logo watermark — top right -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Right"
@@ -568,6 +683,23 @@
                                      Text="No intelligence brief generated yet.&#10;&#10;1. Fill in your Profile&#10;2. Add your Claude API key in Settings&#10;3. Click Scan Now"/>
                         </ScrollViewer>
 
+                        <!-- Patience overlay — appears after 5s of streaming silence -->
+                        <Border x:Name="StreamPauseOverlay" Grid.Row="1"
+                                VerticalAlignment="Center" HorizontalAlignment="Center"
+                                Background="#E50a0e17" BorderBrush="#00ff88" BorderThickness="1"
+                                CornerRadius="8" Padding="40,24" Panel.ZIndex="100"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="GATHERING INTELLIGENCE" Foreground="#00ff88"
+                                           FontFamily="Consolas" FontSize="14" FontWeight="Bold"
+                                           TextAlignment="Center" Margin="0,0,0,10"/>
+                                <TextBlock x:Name="StreamPauseDetail"
+                                           Text="Please be patient — your agent is working..."
+                                           Foreground="#9ca3af" FontFamily="Consolas" FontSize="11"
+                                           TextAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Chat toggle button -->
                         <Button x:Name="BriefChatToggle" Grid.Row="2" Content="&#x1F4AC; Chat"
                                 Click="BriefChatToggle_Click" Background="#1a3a2a" Foreground="#00ff88"
@@ -601,6 +733,10 @@
                                             DockPanel.Dock="Right" Background="#3a1a1a"
                                             Foreground="#ef4444" BorderBrush="#ef4444"
                                             Padding="10,3" FontSize="11"/>
+                                    <Button Content="&#x1F5D1; Clear Chat" Click="BriefClearChat_Click"
+                                            DockPanel.Dock="Right" Background="#1a1f2e"
+                                            Foreground="#6b7280" BorderBrush="#374151"
+                                            Padding="10,3" FontSize="11" Margin="0,0,6,0"/>
                                     <TextBlock Text="SENTINEL CHAT" Foreground="#00ff88"
                                                FontWeight="Bold" FontFamily="Consolas" FontSize="13"
                                                VerticalAlignment="Center"/>
@@ -657,7 +793,7 @@
 
                         <Grid Grid.Row="0">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="280"/>
+                                <ColumnDefinition Width="190"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
@@ -676,7 +812,20 @@
                                     <ListBox x:Name="BriefHistoryList" Grid.Row="1"
                                              Background="#111827" Foreground="#e5e7eb" BorderThickness="0"
                                              SelectionChanged="BriefHistory_SelectionChanged"
-                                             DisplayMemberPath="DisplayText"/>
+                                             KeyDown="BriefHistory_KeyDown"
+                                             DisplayMemberPath="DisplayText">
+                                        <ListBox.ContextMenu>
+                                            <ContextMenu Background="#111827" BorderBrush="#1e293b" Foreground="#e5e7eb">
+                                                <MenuItem Header="📄 Export to Text Editor" Click="BriefHistory_Export"
+                                                          Foreground="#e5e7eb" Background="#111827"/>
+                                                <MenuItem Header="🗑 Clear Chat History" Click="BriefHistory_ClearChat"
+                                                          Foreground="#fbbf24" Background="#111827"/>
+                                                <Separator Background="#1e293b"/>
+                                                <MenuItem Header="🗑 Delete Brief" Click="BriefHistory_Delete"
+                                                          Foreground="#ef4444" Background="#111827"/>
+                                            </ContextMenu>
+                                        </ListBox.ContextMenu>
+                                    </ListBox>
                                 </Grid>
                             </Border>
 
@@ -899,24 +1048,161 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Split panels -->
+                    <!-- FTP-style top picker + bottom detail -->
                     <Grid Grid.Row="2">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="*" MinHeight="80"/>
+                            <RowDefinition Height="*" MinHeight="100"/>
                             <RowDefinition Height="5"/>
-                            <RowDefinition Height="2*" MinHeight="80"/>
+                            <RowDefinition Height="*" MinHeight="100"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Watchlist -->
+                        <!-- ── TOP: FTP dual-panel picker ── -->
                         <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="120"/>
+                                <ColumnDefinition Width="76"/>
+                                <ColumnDefinition Width="*" MinWidth="120"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- LEFT: Included / Watchlist -->
+                            <Grid Grid.Column="0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Margin="0,0,0,4" FontSize="11"
+                                           FontFamily="Consolas" FontWeight="SemiBold" Foreground="#00ff88">
+                                    <Run Text="&#x25B2; WATCHLIST"/>
+                                    <Run Text=" (included in briefs)" Foreground="#6b7280"/>
+                                </TextBlock>
+                                <ListBox x:Name="WatchIncludedList" Grid.Row="1"
+                                         Background="#111827" Foreground="#e5e7eb" BorderThickness="1"
+                                         BorderBrush="#1e293b" SelectionMode="Extended"
+                                         DisplayMemberPath="CountryName"
+                                         MouseDoubleClick="WatchIncludedList_DoubleClick">
+                                    <ListBox.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Move to Excluded &#x25BA;" Click="WatchIncludedCtx_MoveToExcluded"/>
+                                        </ContextMenu>
+                                    </ListBox.ContextMenu>
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Foreground" Value="#e5e7eb"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="Padding" Value="6,3"/>
+                                            <Setter Property="FontFamily" Value="Segoe UI"/>
+                                            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                                                Padding="{TemplateBinding Padding}">
+                                                            <ContentPresenter/>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsSelected" Value="True">
+                                                                <Setter TargetName="Bd" Property="Background" Value="#1e3a5e"/>
+                                                                <Setter Property="Foreground" Value="#00ff88"/>
+                                                            </Trigger>
+                                                            <MultiTrigger>
+                                                                <MultiTrigger.Conditions>
+                                                                    <Condition Property="IsMouseOver" Value="True"/>
+                                                                    <Condition Property="IsSelected" Value="False"/>
+                                                                </MultiTrigger.Conditions>
+                                                                <Setter TargetName="Bd" Property="Background" Value="#1a2535"/>
+                                                            </MultiTrigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                </ListBox>
+                            </Grid>
+
+                            <!-- CENTRE: Move buttons -->
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                        Margin="4,0">
+                                <Button Content="&#x25C4; Add" Click="MoveToWatchlist_Click"
+                                        Margin="0,0,0,8" Padding="8,6"
+                                        Foreground="#00ff88" BorderBrush="#00ff88" Background="#0a1a0a"
+                                        FontWeight="SemiBold" FontSize="11" ToolTip="Add selected to Watchlist"/>
+                                <Button Content="Remove &#x25BA;" Click="MoveToExcluded_Click"
+                                        Padding="8,6"
+                                        Foreground="#fbbf24" BorderBrush="#fbbf24" Background="#1a1200"
+                                        FontWeight="SemiBold" FontSize="11" ToolTip="Remove selected from Watchlist"/>
+                            </StackPanel>
+
+                            <!-- RIGHT: Excluded -->
+                            <Grid Grid.Column="2">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Margin="0,0,0,4" FontSize="11"
+                                           FontFamily="Consolas" FontWeight="SemiBold" Foreground="#fbbf24">
+                                    <Run Text="&#x25BC; EXCLUDED"/>
+                                    <Run Text=" (omitted from briefs)" Foreground="#6b7280"/>
+                                </TextBlock>
+                                <ListBox x:Name="WatchExcludedList" Grid.Row="1"
+                                         Background="#111827" Foreground="#e5e7eb" BorderThickness="1"
+                                         BorderBrush="#1e293b" SelectionMode="Extended"
+                                         DisplayMemberPath="CountryName"
+                                         MouseDoubleClick="WatchExcludedList_DoubleClick">
+                                    <ListBox.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="&#x25C4; Add to Watchlist" Click="WatchExcludedCtx_AddToWatchlist"/>
+                                        </ContextMenu>
+                                    </ListBox.ContextMenu>
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Foreground" Value="#e5e7eb"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="Padding" Value="6,3"/>
+                                            <Setter Property="FontFamily" Value="Segoe UI"/>
+                                            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListBoxItem">
+                                                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                                                Padding="{TemplateBinding Padding}">
+                                                            <ContentPresenter/>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsSelected" Value="True">
+                                                                <Setter TargetName="Bd" Property="Background" Value="#1a1a00"/>
+                                                                <Setter Property="Foreground" Value="#fbbf24"/>
+                                                            </Trigger>
+                                                            <MultiTrigger>
+                                                                <MultiTrigger.Conditions>
+                                                                    <Condition Property="IsMouseOver" Value="True"/>
+                                                                    <Condition Property="IsSelected" Value="False"/>
+                                                                </MultiTrigger.Conditions>
+                                                                <Setter TargetName="Bd" Property="Background" Value="#1a2535"/>
+                                                            </MultiTrigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                </ListBox>
+                            </Grid>
+                        </Grid>
+
+                        <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
+                                      Background="#1e293b" VerticalAlignment="Center" Cursor="SizeNS"/>
+
+                        <!-- ── BOTTOM: Watchlist detail GridView ── -->
+                        <Grid Grid.Row="2">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Margin="0,0,0,4" FontSize="11"
+                            <TextBlock Grid.Row="0" Margin="0,4,0,4" FontSize="11"
                                        FontFamily="Consolas" FontWeight="SemiBold" Foreground="#00ff88">
-                                <Run Text="&#x25B2; WATCHLIST"/>
-                                <Run Text=" — included in briefs. Right-click to edit or move." Foreground="#6b7280"/>
+                                <Run Text="WATCHLIST DETAIL"/>
+                                <Run Text=" — right-click to edit cities, region, reason or toggle exit plan." Foreground="#6b7280"/>
                             </TextBlock>
                             <ListView x:Name="WatchlistView" Grid.Row="1" Background="#111827"
                                       Foreground="#e5e7eb" BorderThickness="0"
@@ -924,11 +1210,11 @@
                                       MouseDoubleClick="WatchlistView_DoubleClick">
                                 <ListView.View>
                                     <GridView>
-                                        <GridViewColumn Header="Country" Width="175" DisplayMemberBinding="{Binding CountryName}"/>
+                                        <GridViewColumn Header="Country" Width="160" DisplayMemberBinding="{Binding CountryName}"/>
                                         <GridViewColumn Header="Code" Width="45" DisplayMemberBinding="{Binding CountryCode}"/>
-                                        <GridViewColumn Header="Cities" Width="150" DisplayMemberBinding="{Binding City}"/>
-                                        <GridViewColumn Header="State/Province" Width="120" DisplayMemberBinding="{Binding StateProvince}"/>
-                                        <GridViewColumn Header="Reason" Width="175" DisplayMemberBinding="{Binding Reason}"/>
+                                        <GridViewColumn Header="Cities" Width="300" DisplayMemberBinding="{Binding City}"/>
+                                        <GridViewColumn Header="State/Province" Width="270" DisplayMemberBinding="{Binding StateProvince}"/>
+                                        <GridViewColumn Header="Reason" Width="400" DisplayMemberBinding="{Binding Reason}"/>
                                         <GridViewColumn Header="Exit Plan" Width="70" DisplayMemberBinding="{Binding ExitPlanLabel}"/>
                                     </GridView>
                                 </ListView.View>
@@ -941,41 +1227,6 @@
                                         <MenuItem Header="Toggle Exit Plan Destination" Click="WatchCtx_ToggleExitPlan"/>
                                         <Separator/>
                                         <MenuItem Header="Move to Excluded List" Click="WatchCtx_MoveToExcluded"/>
-                                    </ContextMenu>
-                                </ListView.ContextMenu>
-                            </ListView>
-                        </Grid>
-
-                        <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch"
-                                      Background="#1e293b" VerticalAlignment="Center" Cursor="SizeNS"/>
-
-                        <!-- Excluded countries -->
-                        <Grid Grid.Row="2">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Margin="0,4,0,4" FontSize="11"
-                                       FontFamily="Consolas" FontWeight="SemiBold" Foreground="#fbbf24">
-                                <Run Text="&#x25BC; EXCLUDED"/>
-                                <Run Text=" — omitted from briefs. Right-click to add to watchlist." Foreground="#6b7280"/>
-                            </TextBlock>
-                            <ListView x:Name="ExclusionView" Grid.Row="1" Background="#111827"
-                                      Foreground="#e5e7eb" BorderThickness="0"
-                                      ItemContainerStyle="{StaticResource GridViewItemStyle}"
-                                      MouseDoubleClick="ExclusionView_DoubleClick">
-                                <ListView.View>
-                                    <GridView>
-                                        <GridViewColumn Header="Country" Width="175" DisplayMemberBinding="{Binding CountryName}"/>
-                                        <GridViewColumn Header="Code" Width="45" DisplayMemberBinding="{Binding CountryCode}"/>
-                                        <GridViewColumn Header="Cities" Width="150" DisplayMemberBinding="{Binding City}"/>
-                                        <GridViewColumn Header="State/Province" Width="120" DisplayMemberBinding="{Binding StateProvince}"/>
-                                        <GridViewColumn Header="Reason" Width="220" DisplayMemberBinding="{Binding Reason}"/>
-                                    </GridView>
-                                </ListView.View>
-                                <ListView.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="Add to Watchlist" Click="ExclCtx_AddToWatchlist"/>
                                     </ContextMenu>
                                 </ListView.ContextMenu>
                             </ListView>
@@ -1012,44 +1263,18 @@
                             <ColumnDefinition Width="*" MinWidth="200"/>
                         </Grid.ColumnDefinitions>
 
-                        <!-- Left panel: exit destinations + auto-suggested -->
+                        <!-- Left panel: exit destinations -->
                         <Grid Grid.Column="0">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
-                                <!-- Destinations list — flexible top half -->
-                                <RowDefinition Height="*" MinHeight="80"/>
-                                <!-- Splitter: only moves the boundary between Row 1 and Row 3 -->
-                                <RowDefinition Height="5"/>
-                                <!-- Auto-routes block — flexible bottom half, header always visible -->
-                                <RowDefinition Height="*" MinHeight="100"/>
+                                <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Text="MY EXIT DESTINATIONS" Foreground="#00ff88"
                                        FontFamily="Consolas" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,4"/>
                             <ListView x:Name="ExitPlanCountriesView" Grid.Row="1"
                                       Background="#111827" BorderThickness="0" Foreground="#e5e7eb"
-                                      DisplayMemberPath="DisplayText"
                                       SelectionChanged="ExitPlanCountry_Selected"/>
-                            <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch"
-                                          Background="#1e293b" VerticalAlignment="Center" Cursor="SizeNS"
-                                          ResizeBehavior="PreviousAndNext"/>
-
-                            <!-- Auto-routes section nested in one * row so splitter only moves its top edge -->
-                            <Grid Grid.Row="3">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="*"/>
-                                </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Text="AUTO-SUGGESTED ROUTES" Foreground="#fbbf24"
-                                           FontFamily="Consolas" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,4"/>
-                                <TextBlock Grid.Row="1" x:Name="AutoExitPlaceholder" TextWrapping="Wrap"
-                                           Text="To see auto-suggested exit routes, enter a valid address in your Profile and press Scan."
-                                           Foreground="#4a5568" FontSize="10" Margin="0,0,0,4"/>
-                                <ListView x:Name="AutoExitView" Grid.Row="2"
-                                          Background="#111827" BorderThickness="0" Foreground="#9ca3af"
-                                          DisplayMemberPath="DisplayText"/>
-                            </Grid>
                         </Grid>
 
                         <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center"
@@ -1065,27 +1290,38 @@
                                        Text="&#x2190; Select a destination"
                                        Foreground="#9ca3af" FontFamily="Consolas" FontSize="12" Margin="8,0,0,8"/>
                             <ListView x:Name="ExitPlanList" Grid.Row="1"
-                                      Background="#0a0e17" BorderThickness="0" Foreground="#e5e7eb" Margin="8,0,0,0">
-                                <ListView.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="0,3">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="30"/>
-                                                <ColumnDefinition Width="120"/>
-                                                <ColumnDefinition Width="200"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <CheckBox Grid.Column="0" IsChecked="{Binding Completed}"
-                                                      Click="ExitPlanCheck_Click" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding Category}" Foreground="#fbbf24"
-                                                       FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="2" Text="{Binding TaskTitle}" Foreground="#e5e7eb"
-                                                       FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="3" Text="{Binding TaskDescription}" Foreground="#9ca3af"
-                                                       FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
+                                      Background="#0a0e17" BorderThickness="0" Foreground="#e5e7eb" Margin="8,0,0,0"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                      ItemContainerStyle="{StaticResource GridViewItemStyle}">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridView.ColumnHeaderContainerStyle>
+                                            <Style TargetType="GridViewColumnHeader" BasedOn="{StaticResource {x:Type GridViewColumnHeader}}">
+                                                <EventSetter Event="PreviewMouseDoubleClick" Handler="ExitPlanColumnHeader_DoubleClick"/>
+                                            </Style>
+                                        </GridView.ColumnHeaderContainerStyle>
+                                        <GridViewColumn Width="28">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding Completed}"
+                                                              Click="ExitPlanCheck_Click"
+                                                              VerticalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Category" Width="120">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Category}" Foreground="#fbbf24"
+                                                               FontWeight="SemiBold" FontSize="11"
+                                                               VerticalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Task" Width="180" DisplayMemberBinding="{Binding TaskTitle}"/>
+                                        <GridViewColumn Header="Description" Width="420" DisplayMemberBinding="{Binding TaskDescription}"/>
+                                    </GridView>
+                                </ListView.View>
                             </ListView>
                         </Grid>
                     </Grid>
@@ -1099,18 +1335,30 @@
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                             <Image Source="Assets/Sentinel.png" Width="28" Height="28" Margin="0,0,10,0"
                                    RenderOptions.BitmapScalingMode="HighQuality" VerticalAlignment="Center"/>
-                            <TextBlock Text="HVR PROFILE" FontSize="16" FontWeight="Bold"
+                            <TextBlock Text="PERSONAL PROFILE" FontSize="16" FontWeight="Bold"
                                        Foreground="#00ff88" FontFamily="Consolas" VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <!-- Values, Health, Skills — shown first so they're immediately visible -->
                         <TextBlock Text="VALUES &amp; LIFESTYLE" Foreground="#fbbf24" FontWeight="Bold" Margin="0,0,0,8"/>
-                        <Label Content="Core Values"/>
-                        <TextBox x:Name="ProfileValues" TextWrapping="Wrap" AcceptsReturn="True" Height="50"/>
-                        <Label Content="Health Approach"/>
-                        <TextBox x:Name="ProfileHealth" TextWrapping="Wrap" AcceptsReturn="True" Height="50"/>
-                        <Label Content="Skills"/>
-                        <TextBox x:Name="ProfileSkills" TextWrapping="Wrap" AcceptsReturn="True" Height="50"/>
+                        <Label Content="Core Values"
+                               ToolTip="Helps identify destinations where your values and way of life can be maintained"/>
+                        <TextBox x:Name="ProfileValues" TextWrapping="Wrap" AcceptsReturn="True" Height="50"
+                                 Style="{StaticResource WatermarkTextBox}"
+                                 Tag="e.g. Christian, family life, rule of law, freedom of speech, outdoor lifestyle..."
+                                 ToolTip="Helps identify destinations where your values and way of life can be maintained"/>
+                        <Label Content="Lifestyle &amp; Health"
+                               ToolTip="Helps identify destinations with the healthcare and food culture you prefer"/>
+                        <TextBox x:Name="ProfileHealth" TextWrapping="Wrap" AcceptsReturn="True" Height="50"
+                                 Style="{StaticResource WatermarkTextBox}"
+                                 Tag="e.g. clean eating, gym culture, specific diet, holistic medicine, outdoor sports..."
+                                 ToolTip="Helps identify destinations where your preferred foods and lifestyle are commonly available"/>
+                        <Label Content="Skills &amp; Profession"
+                               ToolTip="Countries where your skills are in demand may offer faster migration pathways"/>
+                        <TextBox x:Name="ProfileSkills" TextWrapping="Wrap" AcceptsReturn="True" Height="50"
+                                 Style="{StaticResource WatermarkTextBox}"
+                                 Tag="e.g. IT, engineering, farming, medicine, trades, finance, teaching..."
+                                 ToolTip="Helps identify destinations where your skills are valued and where migration pathways may be available"/>
 
                         <!-- Personal Info -->
                         <TextBlock Text="PERSONAL INFORMATION" Foreground="#fbbf24" FontWeight="Bold" Margin="0,16,0,8"/>
@@ -1134,12 +1382,20 @@
                             </Grid.RowDefinitions>
 
                             <Label Content="Full Name" Grid.Row="0" Grid.Column="0"/>
-                            <TextBox x:Name="ProfileName" Grid.Row="0" Grid.Column="1"/>
-                            <Label Content="ID Number" Grid.Row="0" Grid.Column="3"/>
-                            <TextBox x:Name="ProfileIdNumber" Grid.Row="0" Grid.Column="4"/>
+                            <TextBox x:Name="ProfileName" Grid.Row="0" Grid.Column="1"
+                                     Style="{StaticResource WatermarkTextBox}"
+                                     Tag="Your full name"/>
+                            <Label Content="ID / Social Security No."
+                                   Grid.Row="0" Grid.Column="3"
+                                   ToolTip="Your ID or Social Security number may help detect identity fraud or threats targeting you personally. Stored locally only."/>
+                            <TextBox x:Name="ProfileIdNumber" Grid.Row="0" Grid.Column="4"
+                                     Style="{StaticResource WatermarkTextBox}"
+                                     Tag="ID or Social Security number"
+                                     ToolTip="May help detect identity fraud or threats targeting you personally. Stored locally only — never transmitted."/>
 
                             <Label Content="Age" Grid.Row="1" Grid.Column="0"/>
-                            <TextBox x:Name="ProfileAge" Grid.Row="1" Grid.Column="1" Width="80" HorizontalAlignment="Left"/>
+                            <TextBox x:Name="ProfileAge" Grid.Row="1" Grid.Column="1" Width="80" HorizontalAlignment="Left"
+                                     Style="{StaticResource WatermarkTextBox}" Tag="e.g. 35"/>
                             <Label Content="Gender" Grid.Row="1" Grid.Column="3"/>
                             <ComboBox x:Name="ProfileGender" Grid.Row="1" Grid.Column="4" Width="120" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="Male"/>
@@ -1147,34 +1403,42 @@
                                 <ComboBoxItem Content="Other"/>
                             </ComboBox>
 
-                            <Label Content="Ethnicity" Grid.Row="2" Grid.Column="0"/>
-                            <TextBox x:Name="ProfileEthnicity" Grid.Row="2" Grid.Column="1"/>
-                            <Label Content="Immigration" Grid.Row="2" Grid.Column="3"/>
-                            <TextBox x:Name="ProfileImmigration" Grid.Row="2" Grid.Column="4"/>
+                            <Label Content="Ethnicity" Grid.Row="2" Grid.Column="0"
+                                   ToolTip="Some destinations have specific programs or communities for particular groups — improves relocation recommendations"/>
+                            <TextBox x:Name="ProfileEthnicity" Grid.Row="2" Grid.Column="1"
+                                     Style="{StaticResource WatermarkTextBox}"
+                                     Tag="e.g. Afrikaner, White, Black African, Asian..."
+                                     ToolTip="Some destinations have specific programs or communities for certain groups — improves relocation and exit plan recommendations"/>
+                            <Label Content="Immigration Status" Grid.Row="2" Grid.Column="3"
+                                   ToolTip="Your legal status determines which migration pathways and refugee programs apply to you"/>
+                            <TextBox x:Name="ProfileImmigration" Grid.Row="2" Grid.Column="4"
+                                     Style="{StaticResource WatermarkTextBox}"
+                                     Tag="e.g. Citizen, Permanent Resident, Work Visa..."
+                                     ToolTip="Your legal status determines which migration pathways and refugee programs apply to you"/>
 
                             <!-- Address fields -->
-                            <Label Content="Street Address" Grid.Row="3" Grid.Column="0"/>
-                            <TextBox x:Name="ProfileStreetAddress" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="4"/>
+                            <Label Content="Street Address" Grid.Row="3" Grid.Column="0"
+                                   ToolTip="Used to calculate your home location on the globe and distances to watchlisted countries"/>
+                            <TextBox x:Name="ProfileStreetAddress" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="4"
+                                     Style="{StaticResource WatermarkTextBox}" Tag="Your current street address"/>
 
                             <Label Content="Suburb" Grid.Row="4" Grid.Column="0"/>
-                            <TextBox x:Name="ProfileSuburb" Grid.Row="4" Grid.Column="1"/>
+                            <TextBox x:Name="ProfileSuburb" Grid.Row="4" Grid.Column="1"
+                                     Style="{StaticResource WatermarkTextBox}" Tag="Suburb or area"/>
                             <Label Content="City" Grid.Row="4" Grid.Column="3"/>
-                            <TextBox x:Name="ProfileCity" Grid.Row="4" Grid.Column="4"/>
+                            <TextBox x:Name="ProfileCity" Grid.Row="4" Grid.Column="4"
+                                     Style="{StaticResource WatermarkTextBox}" Tag="City or town"/>
 
                             <Label Content="Country" Grid.Row="5" Grid.Column="0"/>
-                            <TextBox x:Name="ProfileCountry" Grid.Row="5" Grid.Column="1"/>
+                            <TextBox x:Name="ProfileCountry" Grid.Row="5" Grid.Column="1"
+                                     Style="{StaticResource WatermarkTextBox}" Tag="Country code, e.g. ZA"/>
                             <Label Content="Postal Code" Grid.Row="5" Grid.Column="3"/>
-                            <TextBox x:Name="ProfilePostalCode" Grid.Row="5" Grid.Column="4" Width="150" HorizontalAlignment="Left"/>
+                            <TextBox x:Name="ProfilePostalCode" Grid.Row="5" Grid.Column="4" Width="150" HorizontalAlignment="Left"
+                                     Style="{StaticResource WatermarkTextBox}" Tag="Postal code"/>
 
-                            <Label Content="Latitude" Grid.Row="6" Grid.Column="0"/>
-                            <TextBox x:Name="ProfileLat" Grid.Row="6" Grid.Column="1" Width="150" HorizontalAlignment="Left"
-                                     IsReadOnly="True" Foreground="#9ca3af"/>
-                            <Label Content="Longitude" Grid.Row="6" Grid.Column="3"/>
-                            <TextBox x:Name="ProfileLon" Grid.Row="6" Grid.Column="4" Width="150" HorizontalAlignment="Left"
-                                     IsReadOnly="True" Foreground="#9ca3af"/>
-
-                            <Label Content="Vehicle Type" Grid.Row="7" Grid.Column="0"/>
-                            <ComboBox x:Name="ProfileVehicleType" Grid.Row="7" Grid.Column="1" Width="120" HorizontalAlignment="Left">
+                            <Label Content="Vehicle Type" Grid.Row="6" Grid.Column="0"
+                                   ToolTip="Certain vehicle types are prime hijacking targets in high-risk areas"/>
+                            <ComboBox x:Name="ProfileVehicleType" Grid.Row="6" Grid.Column="1" Width="120" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="Sedan"/>
                                 <ComboBoxItem Content="SUV"/>
                                 <ComboBoxItem Content="Hatchback"/>
@@ -1182,8 +1446,19 @@
                                 <ComboBoxItem Content="Luxury"/>
                                 <ComboBoxItem Content="4x4"/>
                             </ComboBox>
-                            <Label Content="Make / Model" Grid.Row="7" Grid.Column="3"/>
-                            <TextBox x:Name="ProfileVehicleMakeModel" Grid.Row="7" Grid.Column="4"/>
+                            <Label Content="Latitude" Grid.Row="6" Grid.Column="3"/>
+                            <TextBox x:Name="ProfileLat" Grid.Row="6" Grid.Column="4" Width="150" HorizontalAlignment="Left"
+                                     IsReadOnly="True" Foreground="#9ca3af"/>
+
+                            <Label Content="Make / Model" Grid.Row="7" Grid.Column="0"
+                                   ToolTip="Specific makes and models are disproportionately targeted for hijacking in certain areas — entering this detail flags the risk in your security brief"/>
+                            <TextBox x:Name="ProfileVehicleMakeModel" Grid.Row="7" Grid.Column="1"
+                                     Style="{StaticResource WatermarkTextBox}"
+                                     Tag="e.g. Toyota HiLux, BMW X5, VW Polo"
+                                     ToolTip="Specific makes/models are disproportionately targeted for hijacking — this detail flags that risk in your security brief"/>
+                            <Label Content="Longitude" Grid.Row="7" Grid.Column="3"/>
+                            <TextBox x:Name="ProfileLon" Grid.Row="7" Grid.Column="4" Width="150" HorizontalAlignment="Left"
+                                     IsReadOnly="True" Foreground="#9ca3af"/>
                         </Grid>
 
                         <Button Content="&#x1F4BE; Save Profile" Click="SaveProfile_Click" Margin="0,16,0,0"
@@ -1206,20 +1481,21 @@
 
                         <!-- API Configuration -->
                         <TextBlock Text="API CONFIGURATION" Foreground="#fbbf24" FontWeight="Bold" Margin="0,0,0,8"/>
-                        <Label Content="Claude API Key"/>
+                        <Label Content="Your Serial Number"/>
                         <PasswordBox x:Name="SettingsApiKey" Background="#111827" Foreground="#e5e7eb"
                                      BorderBrush="#1e293b" Padding="6,4"/>
-                        <Label Content="Claude Model"/>
-                        <ComboBox x:Name="SettingsModel" Width="350" HorizontalAlignment="Left">
-                            <ComboBoxItem Content="claude-opus-4-6"/>
-                            <ComboBoxItem Content="claude-sonnet-4-5-20250929"/>
-                            <ComboBoxItem Content="claude-opus-4-5-20251101"/>
-                            <ComboBoxItem Content="claude-haiku-4-5-20251001"/>
-                            <ComboBoxItem Content="claude-sonnet-4-20250514"/>
-                            <ComboBoxItem Content="claude-opus-4-20250514"/>
+                        <Label Content="Intelligence Agent"/>
+                        <ComboBox x:Name="SettingsModel" HorizontalAlignment="Stretch">
+                            <ComboBoxItem Tag="claude-haiku-4-5-20251001"  Content="Field Operative        [Basic surveillance &amp; pattern scanning. May miss fine detail | Economy rates]"/>
+                            <ComboBoxItem Tag="claude-sonnet-4-20250514"   Content="Case Officer           [Reliable threat analysis &amp; full briefings. Solid tradecraft | Standard fees]"/>
+                            <ComboBoxItem Tag="claude-sonnet-4-5-20250929" Content="Senior Analyst         [Deep-dive intel, comprehensive threat assessment. Strong recall | Professional fees]"/>
+                            <ComboBoxItem Tag="claude-opus-4-20250514"     Content="Special Agent          [Elite intelligence synthesis &amp; high-fidelity profiling. Few details missed | Premium fees]"/>
+                            <ComboBoxItem Tag="claude-opus-4-5-20251101"   Content="Ghost Protocol         [Command-level analysis. Exceptional precision &amp; source depth. High yield | High operational fees]"/>
+                            <ComboBoxItem Tag="claude-opus-4-6"            Content="Senior Director, Class 00  [Maximum intelligence output. Nothing overlooked. You pay for what you get | Classified rates]"/>
                         </ComboBox>
                         <Label Content="Google Maps API Key"/>
-                        <TextBox x:Name="SettingsGoogleKey"/>
+                        <PasswordBox x:Name="SettingsGoogleKey" Background="#111827" Foreground="#e5e7eb"
+                                     BorderBrush="#1e293b" Padding="6,4"/>
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0" VerticalAlignment="Center">
                             <Label Content="Credit Balance ($)" VerticalAlignment="Center" Padding="0,0,6,0"/>
                             <TextBox x:Name="SettingsApiMonthlyBudget" Width="80" Text="0.00" VerticalAlignment="Center"/>

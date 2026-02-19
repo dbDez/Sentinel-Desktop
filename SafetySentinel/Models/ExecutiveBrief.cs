@@ -27,6 +27,6 @@ namespace SafetySentinel.Models
         }
 
         [Ignore]
-        public string DisplayText => $"{BriefDate:yyyy-MM-dd HH:mm} � {OverallThreatLevel}";
+        public string DisplayText => $"{BriefDate:yyyy-MM-dd HH:mm} | {OverallThreatLevel}";
     }
 }

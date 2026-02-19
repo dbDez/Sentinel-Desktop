@@ -55,6 +55,8 @@ namespace SafetySentinel.Data
             try { _db.Execute("ALTER TABLE user_profile ADD COLUMN ApiBalanceSetAt INTEGER NOT NULL DEFAULT 0"); } catch { }
             // Migration: add WatchlistSnapshot to executive_briefs
             try { _db.Execute("ALTER TABLE executive_briefs ADD COLUMN WatchlistSnapshot TEXT NOT NULL DEFAULT ''"); } catch { }
+            // Migration: add HotspotId to threat_events
+            try { _db.Execute("ALTER TABLE threat_events ADD COLUMN HotspotId INTEGER NOT NULL DEFAULT 0"); } catch { }
 
             // Remove old hardcoded exit plan seed data (new plans are AI-generated per watchlist entry)
             _db.Execute("DELETE FROM exit_plan_items WHERE PlanName LIKE 'Plan A:%' OR PlanName LIKE 'Plan B:%' OR PlanName LIKE 'Plan C:%'");
@@ -126,6 +128,42 @@ namespace SafetySentinel.Data
         public List<CrimeHotspot> GetActiveHotspots()
         {
             return _db.Table<CrimeHotspot>().Where(h => h.Active).ToList();
+        }
+
+        #endregion
+
+        #region Threat Events
+
+        public void SaveThreatEvent(ThreatEvent e)
+        {
+            e.CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (e.Id == 0)
+                _db.Insert(e);
+            else
+                _db.Update(e);
+        }
+
+        public List<ThreatEvent> GetThreatEventsForHotspot(int hotspotId)
+        {
+            return _db.Table<ThreatEvent>()
+                .Where(e => e.HotspotId == hotspotId)
+                .OrderByDescending(e => e.Timestamp)
+                .ToList();
+        }
+
+        public void DeleteThreatEventsForHotspot(int hotspotId)
+        {
+            _db.Execute("DELETE FROM threat_events WHERE HotspotId = ?", hotspotId);
+        }
+
+        /// <summary>Returns the CreatedAt timestamp of the most recent fetch for this hotspot, or 0 if none.</summary>
+        public long GetHotspotIncidentsFetchedAt(int hotspotId)
+        {
+            return _db.Table<ThreatEvent>()
+                .Where(e => e.HotspotId == hotspotId)
+                .OrderByDescending(e => e.CreatedAt)
+                .Select(e => e.CreatedAt)
+                .FirstOrDefault();
         }
 
         #endregion

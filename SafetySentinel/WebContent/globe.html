@@ -7,7 +7,7 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #0a0e17; overflow: hidden; font-family: 'Consolas', monospace; }
-        #globe-container { width: 100vw; height: 100vh; }
+        #globe-container { width: 100vw; height: 100vh; opacity: 0; transition: opacity 5s ease-out; }
         canvas { display: block; }
 
         #tooltip {
@@ -85,6 +85,21 @@
         .sidebar-section { font-size: 11px; color: #fbbf24; font-weight: bold; margin: 12px 0 6px; }
         .sidebar-detail { font-size: 11px; color: #9ca3af; margin: 3px 0; display: flex; justify-content: space-between; }
         .sidebar-detail span:last-child { color: #e5e7eb; font-weight: bold; }
+        #hotspot-nav {
+            display: none; align-items: center; justify-content: space-between;
+            margin: 8px 0 14px; gap: 8px;
+        }
+        .hs-nav-btn {
+            background: #111827; border: 1px solid #1e293b; color: #9ca3af;
+            font-size: 16px; cursor: pointer; border-radius: 4px;
+            width: 32px; height: 32px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+        }
+        .hs-nav-btn:hover { border-color: #00ff88; color: #00ff88; }
+        #hotspot-nav-counter {
+            flex: 1; text-align: center; font-size: 10px; color: #6b7280;
+            font-family: Consolas, monospace; letter-spacing: 1px;
+        }
 
         #watermark {
             position: absolute; bottom: 20px; right: 20px; opacity: 0.35;
@@ -92,19 +107,79 @@
         }
         #watermark img { filter: drop-shadow(0 0 8px rgba(0,255,136,0.3)); }
 
-        #brief-label {
-            position: absolute; top: 58px; left: 12px;
-            color: #4b5563; font-size: 10px; font-family: 'Consolas', monospace;
-            pointer-events: none; z-index: 40;
-            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        /* ===== BOOT SEQUENCE OVERLAY ===== */
+        #boot-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #0a0e17; z-index: 2000;
+            display: flex; align-items: center; justify-content: center;
+            transition: opacity 4s ease-in;
         }
-    </style>
+        #boot-box {
+            text-align: center; padding: 52px 64px;
+            border: 1px solid #1e293b; border-radius: 4px;
+            background: rgba(10, 14, 23, 0.98); min-width: 400px;
+        }
+        #boot-logo {
+            font-size: 30px; font-weight: bold; color: #00ff88;
+            letter-spacing: 10px; margin-bottom: 4px;
+        }
+        #boot-sub {
+            font-size: 9px; color: #6b7280; letter-spacing: 3px;
+            margin-bottom: 28px; text-transform: uppercase;
+        }
+        #boot-divider { height: 1px; background: #1e293b; margin-bottom: 18px; }
+        #boot-tag {
+            font-size: 9px; color: #ef4444; letter-spacing: 2px;
+            margin-bottom: 26px; opacity: 0.75;
+        }
+        #boot-message {
+            font-size: 12px; color: #e5e7eb; letter-spacing: 0.5px;
+            min-height: 18px; margin-bottom: 24px;
+            transition: opacity 0.35s ease;
+        }
+        #boot-dots { display: flex; justify-content: center; gap: 7px; }
+        #boot-dots span {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: #00ff88; opacity: 0.2;
+            animation: bootDot 1.3s infinite ease-in-out;
+        }
+        #boot-dots span:nth-child(2) { animation-delay: 0.2s; }
+        #boot-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bootDot {
+            0%, 100% { opacity: 0.15; transform: scale(0.8); }
+            50%       { opacity: 1;    transform: scale(1.1); }
+        }
+        #boot-time {
+            font-size: 11px; color: #00ff88; letter-spacing: 2px;
+            margin-bottom: 20px; min-height: 16px; font-family: 'Consolas', monospace;
+        }
+        .boot-cursor {
+            color: #00ff88;
+            animation: cursorBlink 0.55s step-end infinite;
+        }
+        @keyframes cursorBlink {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0; }
+        }
+
+</style>
 </head>
 <body>
+    <!-- Boot sequence overlay — visible until globe texture is loaded -->
+    <div id="boot-overlay">
+        <div id="boot-box">
+            <div id="boot-logo">SENTINEL</div>
+            <div id="boot-sub">Security Intelligence System</div>
+            <div id="boot-divider"></div>
+            <div id="boot-tag">[ CLASSIFIED — EYES ONLY ]</div>
+            <div id="boot-time"></div>
+            <div id="boot-message">Securing High Value Asset Location...</div>
+            <div id="boot-dots"><span></span><span></span><span></span></div>
+        </div>
+    </div>
+
     <div id="globe-container"></div>
     <div id="tooltip"></div>
-    <div id="brief-label"></div>
-
     <div id="continent-buttons">
         <button class="continent-btn" data-continent="Africa" onclick="flyToContinent('Africa', this)">Africa</button>
         <button class="continent-btn" data-continent="Asia" onclick="flyToContinent('Asia', this)">Asia</button>
@@ -128,6 +203,11 @@
         <button id="sidebar-close" onclick="closeSidebar()">✕</button>
         <div id="sidebar-country"></div>
         <div id="sidebar-code"></div>
+        <div id="hotspot-nav">
+            <button class="hs-nav-btn" onclick="navigateHotspot(-1)">&#9664;</button>
+            <div id="hotspot-nav-counter"></div>
+            <button class="hs-nav-btn" onclick="navigateHotspot(1)">&#9654;</button>
+        </div>
         <div id="sidebar-domains"></div>
         <div id="sidebar-extras"></div>
         <div id="sidebar-badge"></div>
@@ -137,13 +217,17 @@
         <img src="Sentinel.png" alt="Sentinel" width="48" height="48"/>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="three.min.js"></script>
 
     <script>
         let scene, camera, renderer, globeGroup, globe, countryMarkers = [], hotspotMarkers = [];
         let threatRings = [];
         let countryData = [], hotspotData = [];
         let autoRotate = true, isDragging = false, isAnimating = false;
+        let autoRotateBeforeSidebar = true; // saved state when a threat zone is clicked
+        let zoomBeforeSidebar = 0; // saved zoom when a threat zone is clicked (0 = not set)
+        let _sidebarIsHotspot = false;
+        let _countryHotspots = [], _hotspotIndex = 0, _highlightedHotspotId = 0;
         let previousMouse = { x: 0, y: 0 };
         let dragStartTime = 0;
         let dragMode = 'normal'; // 'normal', 'zroll-left', or 'zroll-right'
@@ -171,6 +255,8 @@
 
         // Globe readiness
         let globeReady = false;
+        let globeTextureLoaded = false;
+        let bootSequenceDone = false;
 
         // LOD texture management — loaded lazily AFTER globe is interactive
         let currentLOD = 0;
@@ -212,19 +298,15 @@
             globe = new THREE.Mesh(globeGeometry, globeMaterial);
             globeGroup.add(globe);
 
-            // Add wireframe grid overlay so globe is visible immediately
-            const wireGeo = new THREE.SphereGeometry(GLOBE_RADIUS + 0.02, 36, 18);
-            const wireMat = new THREE.MeshBasicMaterial({
-                color: 0x1a3a5c, wireframe: true, transparent: true, opacity: 0.25
-            });
-            const wireGlobe = new THREE.Mesh(wireGeo, wireMat);
-            globeGroup.add(wireGlobe);
+            // Start camera very far away — the globe will appear as a tiny point
+            // and zoom in naturally via the targetZoomDistance lerp in animate().
+            // The texture CDN swap happens silently as the globe zooms in.
+            cameraDistance = 50;
+            targetZoomDistance = DEFAULT_ZOOM;
+            camera.position.set(0, 0, cameraDistance);
 
-            // Globe is usable immediately — signal ready NOW before textures load
-            globeReady = true;
-            window.chrome.webview.postMessage('GLOBE_READY');
-
-            // Load textures asynchronously — swap them in when downloaded
+            // Load base texture — globe is hidden until this arrives.
+            // Only AFTER the texture is applied do we reveal the globe and signal C# to send data.
             textureLoader.load(
                 'https://unpkg.com/three-globe@2.31.1/example/img/earth-blue-marble.jpg',
                 function(tex) {
@@ -234,10 +316,11 @@
                     globeMaterial.emissive = new THREE.Color(0x000000);
                     globeMaterial.emissiveIntensity = 0;
                     globeMaterial.needsUpdate = true;
-                    // Fade out wireframe
-                    wireGlobe.material.opacity = 0;
-                    wireGlobe.visible = false;
-                }
+                    globeTextureLoaded = true;
+                    tryRevealGlobe();
+                },
+                undefined,
+                function() { globeTextureLoaded = true; tryRevealGlobe(); } // CDN error — show dark globe
             );
             textureLoader.load(
                 'https://unpkg.com/three-globe@2.31.1/example/img/earth-topology.png',
@@ -351,7 +434,8 @@
                 m.scale.set(s, s, s);
             });
             hotspotMarkers.forEach(m => {
-                m.scale.set(s, s, s);
+                const boost = (m.userData.id && m.userData.id === _highlightedHotspotId) ? 2.0 : 1.0;
+                m.scale.set(s * boost, s * boost, s * boost);
             });
             threatRings.forEach(m => {
                 m.scale.set(s, s, s);
@@ -402,10 +486,14 @@
             return { lat, lon };
         }
 
-        // Called from C# to set the home position (gentle smooth animation, zooms in close)
-        // Auto-rotate resumes after the fly animation completes.
+        // Called from C# on startup.
+        // Phase 1: zoom gently from wherever the camera is to DEFAULT_ZOOM (full globe visible).
+        // Phase 2: after that completes, fly smoothly to the home country.
         function setHomePosition(lat, lon) {
-            smoothFlyTo(lat, lon, CONTINENT_ZOOM, 0.012);
+            const pos = getCurrentLatLon();
+            smoothFlyTo(pos.lat, pos.lon, DEFAULT_ZOOM, 0.012, function() {
+                smoothFlyTo(lat, lon, CONTINENT_ZOOM, 0.015);
+            });
         }
 
         function getThreatColor(score) {
@@ -437,11 +525,6 @@
         }
 
         // ===== Data Loading =====
-        function setBriefLabel(text) {
-            const el = document.getElementById('brief-label');
-            if (el) el.textContent = text;
-        }
-
         function loadCountryData(data) {
             countryData = data;
             countryMarkers.forEach(m => globeGroup.remove(m));
@@ -516,7 +599,7 @@
         function flyToContinent(name, btn) {
             document.querySelectorAll('.continent-btn').forEach(b => b.classList.remove('active'));
             if (btn) btn.classList.add('active');
-            closeSidebar();
+            closeSidebar(true);
             velocityX = 0;
             velocityY = 0;
 
@@ -536,14 +619,14 @@
 
         function showAll() {
             document.querySelectorAll('.continent-btn').forEach(b => b.classList.remove('active'));
-            closeSidebar();
+            closeSidebar(true);
             velocityX = 0;
             velocityY = 0;
             smoothFlyTo(0, 0, DEFAULT_ZOOM);
         }
 
         // Smooth fly-to using lat/lon interpolation. No quaternion slerp = no Z-roll.
-        function smoothFlyTo(lat, lon, zoom, speed) {
+        function smoothFlyTo(lat, lon, zoom, speed, onComplete) {
             const step_speed = speed || 0.025;
             isAnimating = true;
             // Extract real lat/lon from quaternion (may be stale after drag/momentum)
@@ -572,6 +655,7 @@
                     updateMarkerScales();
                     updateLOD();
                     isAnimating = false;
+                    if (onComplete) onComplete();
                     return;
                 }
                 const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
@@ -742,8 +826,202 @@
             sb.classList.add('open');
         }
 
-        function closeSidebar() {
+        function closeSidebar(fromNavigation) {
             document.getElementById('threat-sidebar').classList.remove('open');
+            document.getElementById('hotspot-nav').style.display = 'none';
+            clearHotspotHighlight();
+            if (!fromNavigation) {
+                // Restore auto-rotate if it was on before the sidebar opened
+                if (autoRotateBeforeSidebar) {
+                    autoRotate = true;
+                    const btn = document.getElementById('rotate-btn');
+                    btn.classList.add('active');
+                    btn.textContent = '⟳ Auto Rotate';
+                }
+                // For country panels zoom out; for hotspot panels stay where we are
+                if (!_sidebarIsHotspot) {
+                    const pos = getCurrentLatLon();
+                    smoothFlyTo(pos.lat, pos.lon, DEFAULT_ZOOM, 0.015);
+                }
+            }
+            _sidebarIsHotspot = false;
+        }
+
+        let _currentHotspotId = 0;
+
+        function openHotspotSidebar(h) {
+            _currentHotspotId = h.id || 0;
+            _sidebarIsHotspot = true;
+
+            // Build/refresh country-filtered hotspot list for navigation
+            if (_countryHotspots.length === 0 || _countryHotspots[0].countryCode !== h.countryCode) {
+                _countryHotspots = hotspotData.filter(x => x.countryCode === h.countryCode);
+            }
+            _hotspotIndex = _countryHotspots.findIndex(x => x.id === h.id);
+            if (_hotspotIndex < 0) _hotspotIndex = 0;
+
+            // Update nav bar
+            const nav = document.getElementById('hotspot-nav');
+            nav.style.display = _countryHotspots.length > 1 ? 'flex' : 'none';
+            document.getElementById('hotspot-nav-counter').textContent =
+                `${_hotspotIndex + 1} / ${_countryHotspots.length}  [${h.countryCode || ''}]`;
+
+            // Highlight this marker on the globe
+            highlightHotspot(_currentHotspotId);
+
+            const sb = document.getElementById('threat-sidebar');
+            document.getElementById('sidebar-country').textContent = h.name || 'Unknown Location';
+            document.getElementById('sidebar-code').textContent = (h.type || 'Crime Hotspot') + ' — Threat Zone';
+
+            const sevLabel = getThreatLabel(h.severity);
+            const barStyle = getThreatBarStyle(h.severity);
+            let html = '<div class="sidebar-section">THREAT SEVERITY</div>';
+            html += `<div class="domain-row">
+                <div class="domain-label"><span>Incident Severity</span><span class="domain-score" style="color:${getThreatColorCSS(h.severity)}">${h.severity}/100 — ${sevLabel}</span></div>
+                <div class="threat-bar"><div class="threat-bar-fill" style="${barStyle}"></div></div>
+            </div>`;
+            document.getElementById('sidebar-domains').innerHTML = html;
+
+            let extras = '<div class="sidebar-section">LOCATION DETAILS</div>';
+            if (h.precinct) extras += `<div class="sidebar-detail"><span>Precinct / Area</span><span>${h.precinct}</span></div>`;
+            if (h.timePattern) extras += `<div class="sidebar-detail"><span>Time Pattern</span><span>${h.timePattern}</span></div>`;
+            extras += `<div class="sidebar-detail"><span>Last Incident</span><span>${h.lastDate || 'Unknown'}</span></div>`;
+            extras += `<div class="sidebar-detail"><span>Incidents (90 days)</span><span style="color:${h.incidents > 10 ? '#ef4444' : h.incidents > 5 ? '#f97316' : '#fbbf24'}">${h.incidents}</span></div>`;
+
+            // Incident intelligence section
+            extras += '<div class="sidebar-section" style="margin-top:16px">INCIDENT INTELLIGENCE</div>';
+            extras += `<div id="incident-list" style="margin-bottom:8px"><div style="color:#6b7280;font-size:11px;font-style:italic">Loading cached incidents...</div></div>`;
+            extras += `<button id="fetch-incidents-btn" onclick="requestFetchIncidents()" style="
+                width:100%;padding:7px 0;background:#111827;border:1px solid #1e293b;
+                color:#00ff88;font-size:11px;cursor:pointer;border-radius:4px;
+                font-family:Consolas,monospace;letter-spacing:1px;margin-top:4px">
+                🔍 SEARCH RECENT INCIDENTS
+            </button>`;
+
+            document.getElementById('sidebar-extras').innerHTML = extras;
+
+            const badgeColor = h.severity >= 76 ? '#ef4444' : h.severity >= 51 ? '#f97316' : h.severity >= 26 ? '#fbbf24' : '#00ff88';
+            const badge = document.getElementById('sidebar-badge');
+            badge.style.background = badgeColor;
+            badge.style.color = '#0a0e17';
+            badge.textContent = `${h.incidents} incident${h.incidents !== 1 ? 's' : ''} in past 90 days`;
+
+            sb.classList.add('open');
+
+            // Request cached incidents from C#
+            if (_currentHotspotId > 0)
+                window.chrome.webview.postMessage('REQUEST_INCIDENTS:' + _currentHotspotId);
+        }
+
+        function requestFetchIncidents() {
+            if (_currentHotspotId <= 0) return;
+            window.chrome.webview.postMessage('FETCH_INCIDENTS:' + _currentHotspotId);
+        }
+
+        function setIncidentsLoading(hotspotId) {
+            if (hotspotId !== _currentHotspotId) return;
+            const el = document.getElementById('incident-list');
+            if (!el) return;
+            el.innerHTML = '<div style="color:#fbbf24;font-size:11px;font-style:italic">⏳ Searching intelligence databases...</div>';
+            const btn = document.getElementById('fetch-incidents-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ SEARCHING...'; }
+        }
+
+        function receiveIncidents(hotspotId, events, fetchedAtMs) {
+            if (hotspotId !== _currentHotspotId) return;
+            const el = document.getElementById('incident-list');
+            const btn = document.getElementById('fetch-incidents-btn');
+            if (!el) return;
+
+            if (btn) { btn.disabled = false; btn.textContent = '🔍 SEARCH RECENT INCIDENTS'; }
+
+            if (!events || events.length === 0) {
+                const ch = _countryHotspots[_hotspotIndex];
+                const t0 = ch && ch.type ? ch.type.toLowerCase() : '';
+                const farmCard = t0.includes('farm') || t0.includes('plaas')
+                    ? `<div style="border:1px solid #f97316;border-radius:4px;padding:7px 8px;margin-top:6px;background:#0d1117">
+                        <div style="font-size:10px;color:#f97316;font-weight:bold;margin-bottom:3px">📌 FARM ATTACK TRACKER</div>
+                        <div style="font-size:10px;color:#9ca3af;margin-bottom:5px;line-height:1.4">Monthly statistics — number of attacks, victims killed and injured.</div>
+                        <button onclick="window.chrome.webview.postMessage('OPEN_URL:https://plaasmoorde.co.za');return false;"
+                            style="font-size:10px;padding:3px 8px;background:none;border:1px solid #f97316;
+                                   color:#f97316;cursor:pointer;border-radius:3px;font-family:Consolas,monospace">
+                            ↗ plaasmoorde.co.za</button>
+                       </div>` : '';
+                el.innerHTML = '<div style="color:#6b7280;font-size:11px;font-style:italic">No incident records found. Click Search to fetch live data.</div>' + farmCard;
+                return;
+            }
+
+            const fetchedDate = fetchedAtMs > 0
+                ? new Date(fetchedAtMs).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })
+                : null;
+
+            let html = fetchedDate
+                ? `<div style="color:#9ca3af;font-size:10px;margin-bottom:6px">Last fetched: ${fetchedDate}</div>`
+                : '';
+
+            // Pinned resource card for farm attack hotspots
+            const currentHotspot = _countryHotspots[_hotspotIndex];
+            const isFarmAttack = currentHotspot && currentHotspot.type &&
+                (() => { const t = currentHotspot.type.toLowerCase(); return t.includes('farm') || t.includes('plaas'); })();
+            if (isFarmAttack) {
+                html += `<div style="border:1px solid #f97316;border-radius:4px;padding:7px 8px;margin-bottom:8px;background:#0d1117">
+                    <div style="font-size:10px;color:#f97316;font-weight:bold;margin-bottom:3px">📌 FARM ATTACK TRACKER</div>
+                    <div style="font-size:10px;color:#9ca3af;margin-bottom:5px;line-height:1.4">Monthly statistics — number of attacks, victims killed and injured.</div>
+                    <button onclick="window.chrome.webview.postMessage('OPEN_URL:https://plaasmoorde.co.za');return false;"
+                        style="font-size:10px;padding:3px 8px;background:none;border:1px solid #f97316;
+                               color:#f97316;cursor:pointer;border-radius:3px;font-family:Consolas,monospace">
+                        ↗ plaasmoorde.co.za</button>
+                </div>`;
+            }
+
+            events.forEach(ev => {
+                const hasUrl = ev.url && ev.url.startsWith('http');
+                html += `<div style="border:1px solid #1e293b;border-radius:4px;padding:7px 8px;margin-bottom:6px;background:#0d1117">
+                    <div style="font-size:11px;color:#e5e7eb;font-weight:bold;margin-bottom:2px">${ev.date} — ${ev.title}</div>
+                    <div style="font-size:10px;color:#9ca3af;margin-bottom:5px;line-height:1.4">${ev.summary}</div>
+                    ${hasUrl ? `<button onclick="window.chrome.webview.postMessage('OPEN_URL:${ev.url.replace(/'/g,"\\'")}');return false;"
+                        style="font-size:10px;padding:3px 8px;background:none;border:1px solid #1e293b;
+                               color:#00ff88;cursor:pointer;border-radius:3px;font-family:Consolas,monospace">
+                        ↗ Open Article</button>` : ''}
+                </div>`;
+            });
+
+            el.innerHTML = html;
+        }
+
+        function navigateHotspot(dir) {
+            if (_countryHotspots.length === 0) return;
+            _hotspotIndex = (_hotspotIndex + dir + _countryHotspots.length) % _countryHotspots.length;
+            const next = _countryHotspots[_hotspotIndex];
+            openHotspotSidebar(next);
+            // If on the back of the globe, gently rotate to bring it into view (keep current zoom)
+            if (!isHotspotVisible(next.lat, next.lng)) {
+                smoothFlyTo(next.lat, next.lng, cameraDistance, 0.018);
+            }
+        }
+
+        function isHotspotVisible(lat, lng) {
+            const pos = latLonToVector3(lat, lng, GLOBE_RADIUS);
+            const worldPos = pos.clone().applyQuaternion(globeGroup.quaternion);
+            return worldPos.z > 0;
+        }
+
+        function highlightHotspot(id) {
+            _highlightedHotspotId = id;
+            hotspotMarkers.forEach(m => {
+                if (m.userData.id === id) {
+                    m.material.color.setHex(0xffdd00); // bright yellow
+                } else {
+                    m.material.color.setHex(0xff2222);
+                }
+            });
+            updateMarkerScales(); // apply size boost immediately
+        }
+
+        function clearHotspotHighlight() {
+            _highlightedHotspotId = 0;
+            hotspotMarkers.forEach(m => m.material.color.setHex(0xff2222));
+            updateMarkerScales();
         }
 
         // ===== Mouse =====
@@ -819,11 +1097,15 @@
         function onClick(e) {
             if (isAnimating) return;
             raycaster.setFromCamera(mouse, camera);
-            const hits = raycaster.intersectObjects(countryMarkers);
-            if (hits.length > 0 && hits[0].object.userData && hits[0].object.userData.code) {
-                const country = hits[0].object.userData;
+            const hits = raycaster.intersectObjects([...countryMarkers, ...hotspotMarkers]);
+            if (hits.length > 0 && hits[0].object.userData) {
+                const d = hits[0].object.userData;
 
-                // Stop auto-rotation so user can inspect
+                // Save state so we can restore it when the sidebar closes
+                autoRotateBeforeSidebar = autoRotate;
+                zoomBeforeSidebar = cameraDistance;
+
+                // Pause rotation while user inspects
                 autoRotate = false;
                 velocityX = 0;
                 velocityY = 0;
@@ -831,9 +1113,13 @@
                 btn.classList.remove('active');
                 btn.textContent = '⟳ Rotation Off';
 
-                // Open sidebar immediately, then fly smoothly after panel appears
-                openSidebar(country);
-                setTimeout(() => smoothFlyTo(country.lat, country.lng, CONTINENT_ZOOM, 0.018), 150);
+                if (d.isHotspot) {
+                    openHotspotSidebar(d);
+                    // No fly-to — user is already zoomed in on the area
+                } else if (d.code) {
+                    openSidebar(d);
+                    setTimeout(() => smoothFlyTo(d.lat, d.lng, CONTINENT_ZOOM, 0.018), 150);
+                }
             }
         }
 
@@ -842,9 +1128,13 @@
 
         function onMouseWheel(e) {
             if (isAnimating) return;
-            // Multiplicative zoom for smooth feel
+            // Apply zoom directly — no lerp lag on manual scroll
             const zoomFactor = 1 + e.deltaY * 0.001;
-            targetZoomDistance = Math.max(6, Math.min(25, targetZoomDistance * zoomFactor));
+            cameraDistance = Math.max(6, Math.min(25, cameraDistance * zoomFactor));
+            targetZoomDistance = cameraDistance; // keep in sync so the lerp doesn't chase
+            camera.position.set(0, 0, cameraDistance);
+            updateMarkerScales();
+            updateLOD();
         }
 
         function onWindowResize() {
@@ -861,7 +1151,7 @@
             if (!isAnimating) {
                 const zoomDiff = targetZoomDistance - cameraDistance;
                 if (Math.abs(zoomDiff) > 0.001) {
-                    cameraDistance += zoomDiff * 0.12; // lerp factor
+                    cameraDistance += zoomDiff * 0.025; // gentle lerp — slow fallback zoom
                     camera.position.set(0, 0, cameraDistance);
                     updateMarkerScales();
                     updateLOD();
@@ -887,6 +1177,7 @@
                     globeGroup.quaternion.premultiply(qAutoRotate);
                     globeGroup.quaternion.normalize();
                 }
+
             }
 
             const pulse = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
@@ -894,7 +1185,124 @@
             renderer.render(scene, camera);
         }
 
+        // Short typewriter tick using Web Audio API (works in WebView2 sandbox).
+        // A brief noise burst — classic teletype/keyboard click.
+        var audioCtx = null;
+        function playTypeTick() {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                var buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.025, audioCtx.sampleRate);
+                var data = buf.getChannelData(0);
+                for (var k = 0; k < data.length; k++) {
+                    // White noise decaying quickly — sharp click
+                    data[k] = (Math.random() * 2 - 1) * Math.pow(1 - k / data.length, 8);
+                }
+                var src = audioCtx.createBufferSource();
+                src.buffer = buf;
+                var gain = audioCtx.createGain();
+                gain.gain.value = 0.18;
+                src.connect(gain);
+                gain.connect(audioCtx.destination);
+                src.start();
+            } catch(e) {}
+        }
+
+        // Build a military DTG string: "19 FEB 2026 — 053015 ZULU"
+        function buildDTG() {
+            var now = new Date();
+            var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+            var dd  = String(now.getUTCDate()).padStart(2,'0');
+            var mon = months[now.getUTCMonth()];
+            var yr  = now.getUTCFullYear();
+            var hh  = String(now.getUTCHours()).padStart(2,'0');
+            var mm  = String(now.getUTCMinutes()).padStart(2,'0');
+            var ss  = String(now.getUTCSeconds()).padStart(2,'0');
+            return dd + ' ' + mon + ' ' + yr + ' — ' + hh + mm + ':' + ss + ' ZULU';
+        }
+
+        // Type out the DTG one character at a time, then update seconds live.
+        function typeOutBootTime() {
+            var el = document.getElementById('boot-time');
+            // Create a persistent cursor span so its blink animation never resets
+            var cursor = document.createElement('span');
+            cursor.className = 'boot-cursor';
+            cursor.textContent = '_';
+            var textNode = document.createTextNode('');
+            el.appendChild(textNode);
+            el.appendChild(cursor);
+
+            var fullStr = buildDTG();
+            var i = 0;
+
+            function typeChar() {
+                i++;
+                textNode.textContent = fullStr.substring(0, i);
+                playTypeTick();
+                if (i < fullStr.length) {
+                    setTimeout(typeChar, 62);
+                } else {
+                    // Typing complete — update seconds live every second (silent)
+                    setInterval(function() { textNode.textContent = buildDTG(); }, 1000);
+                }
+            }
+            setTimeout(typeChar, 400); // short pause before typing starts
+        }
+
+        // Boot sequence — three messages fade in/out, then waits for globe to be ready.
+        function runBootSequence() {
+            typeOutBootTime();
+
+            var messages = [
+                'Securing High Value Asset Location...',
+                'HVA Position Confirmed...',
+                'Moving to Asset Location...'
+            ];
+            var el = document.getElementById('boot-message');
+            var idx = 0;
+
+            function showMsg(i) {
+                el.style.opacity = '0';
+                setTimeout(function() {
+                    el.textContent = messages[i];
+                    el.style.opacity = '1';
+                }, 360);
+            }
+
+            showMsg(0);
+            setTimeout(function() { showMsg(1); }, 4000);
+            setTimeout(function() { showMsg(2); }, 6000);
+            setTimeout(function() {
+                bootSequenceDone = true;
+                tryRevealGlobe();
+            }, 8000);
+        }
+
+        // Called when BOTH the boot sequence is done AND the texture has loaded.
+        // Fades out the overlay and fades in the globe simultaneously.
+        function tryRevealGlobe() {
+            if (!bootSequenceDone || !globeTextureLoaded) return;
+            if (globeReady) return;
+            globeReady = true;
+
+            var overlay = document.getElementById('boot-overlay');
+            var container = document.getElementById('globe-container');
+
+            overlay.style.opacity = '0';       // fade out last boot message
+            container.style.opacity = '1';     // fade in dressed globe
+            window.chrome.webview.postMessage('GLOBE_READY');
+
+            setTimeout(function() { overlay.style.display = 'none'; }, 4200);
+        }
+
+        // Hard fallback: force reveal after 15 seconds if CDN is very slow.
+        setTimeout(function() {
+            globeTextureLoaded = true;
+            bootSequenceDone = true;
+            tryRevealGlobe();
+        }, 15000);
+
         init();
+        runBootSequence();
     </script>
 </body>
 </html>

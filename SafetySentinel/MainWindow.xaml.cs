@@ -38,6 +38,12 @@ namespace SafetySentinel
         private readonly List<(string role, string text)> _historyChatHistory = new();
         private int _currentBriefId = -1; // tracks which brief the chat belongs to
 
+        // Streaming silence detection (DispatcherTimer polls every 500ms — no per-delta Task allocation)
+        private DispatcherTimer? _silenceTimer;
+        private DateTime _lastDeltaTime = DateTime.MinValue;
+        private bool _silenceSoundStopped;
+        private bool _silenceOverlayShown;
+
         // Scan progress
         private static readonly string[] _scanStages = new[]
         {
@@ -113,7 +119,7 @@ namespace SafetySentinel
                 _scheduler.OnDailyBriefDue += async () => await Dispatcher.InvokeAsync(async () => await RunScan());
                 _scheduler.OnStatusUpdate += msg => Dispatcher.Invoke(() => SchedulerStatus.Text = msg);
 
-                UpdateStatus("Ready. Configure API key in Settings, then click Scan Now.");
+                UpdateStartupStatus();
                 Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] ✓ Startup complete — Ready.");
             }
             catch (Exception ex)
@@ -132,7 +138,8 @@ namespace SafetySentinel
         {
             try
             {
-                var env = await CoreWebView2Environment.CreateAsync();
+                var env = await CoreWebView2Environment.CreateAsync(null, null,
+                    new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = "--autoplay-policy=no-user-gesture-required" });
                 await GlobeWebView.EnsureCoreWebView2Async(env);
 
                 string globePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WebContent", "globe.html");
@@ -141,8 +148,21 @@ namespace SafetySentinel
                     var globeReadyTcs = new TaskCompletionSource<bool>();
                     GlobeWebView.CoreWebView2.WebMessageReceived += (_, args) =>
                     {
-                        if (args.TryGetWebMessageAsString() == "GLOBE_READY")
+                        var msg = args.TryGetWebMessageAsString();
+                        if (msg == "GLOBE_READY")
                             globeReadyTcs.TrySetResult(true);
+                        else
+                            _ = HandleGlobeMessage(msg);
+                    };
+
+                    GlobeWebView.CoreWebView2.NavigationCompleted += (_, _) =>
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            var anim = new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(800));
+                            anim.Completed += (_, _) => GlobeBootOverlay.Visibility = Visibility.Collapsed;
+                            GlobeBootOverlay.BeginAnimation(OpacityProperty, anim);
+                        });
                     };
 
                     GlobeWebView.CoreWebView2.Navigate(new Uri(globePath).AbsoluteUri);
@@ -163,29 +183,85 @@ namespace SafetySentinel
             }
         }
 
+        private async Task HandleGlobeMessage(string msg)
+        {
+            if (msg.StartsWith("REQUEST_INCIDENTS:") &&
+                int.TryParse(msg.Substring("REQUEST_INCIDENTS:".Length), out int reqId))
+            {
+                var events = _db.GetThreatEventsForHotspot(reqId);
+                var fetchedAt = _db.GetHotspotIncidentsFetchedAt(reqId);
+                var payload = JsonConvert.SerializeObject(events.Select(e => new
+                {
+                    id = e.Id,
+                    date = DateTimeOffset.FromUnixTimeMilliseconds(e.Timestamp).LocalDateTime.ToString("yyyy-MM-dd"),
+                    title = e.Title,
+                    summary = e.Summary,
+                    url = e.SourceUrl
+                }));
+                await Dispatcher.InvokeAsync(async () =>
+                    await GlobeWebView.ExecuteScriptAsync($"receiveIncidents({reqId},{payload},{fetchedAt})"));
+            }
+            else if (msg.StartsWith("FETCH_INCIDENTS:") &&
+                int.TryParse(msg.Substring("FETCH_INCIDENTS:".Length), out int fetchId))
+            {
+                var hotspot = _hotspots.FirstOrDefault(h => h.Id == fetchId);
+                if (hotspot == null) return;
+
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    UpdateStatus($"Searching incidents for {hotspot.LocationName}...");
+                    await GlobeWebView.ExecuteScriptAsync($"setIncidentsLoading({fetchId})");
+                });
+
+                string apiKey = "", model = "claude-sonnet-4-20250514";
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    apiKey = SettingsApiKey.Password;
+                    model = (SettingsModel.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Tag?.ToString() ?? "claude-sonnet-4-20250514";
+                });
+                _intel.Configure(apiKey, model);
+                var events = await _intel.FetchHotspotIncidents(hotspot);
+
+                var payload = JsonConvert.SerializeObject(events.Select(e => new
+                {
+                    id = e.Id,
+                    date = DateTimeOffset.FromUnixTimeMilliseconds(e.Timestamp).LocalDateTime.ToString("yyyy-MM-dd"),
+                    title = e.Title,
+                    summary = e.Summary,
+                    url = e.SourceUrl
+                }));
+                var fetchedAt = _db.GetHotspotIncidentsFetchedAt(fetchId);
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    UpdateStatus($"Found {events.Count} incident{(events.Count != 1 ? "s" : "")} for {hotspot.LocationName}.");
+                    await GlobeWebView.ExecuteScriptAsync($"receiveIncidents({fetchId},{payload},{fetchedAt})");
+                });
+            }
+            else if (msg.StartsWith("OPEN_URL:"))
+            {
+                var url = msg.Substring("OPEN_URL:".Length);
+                if (url.StartsWith("http://") || url.StartsWith("https://"))
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            }
+        }
+
         private async Task LoadGlobeData(ExecutiveBrief? briefContext = null)
         {
             try
             {
                 // Determine which countries are "active" (in the watchlist for this brief)
                 HashSet<string> activeCodes;
-                string briefLabel;
 
                 if (briefContext != null && !string.IsNullOrEmpty(briefContext.WatchlistSnapshot))
                 {
                     var snapshotCodes = JsonConvert.DeserializeObject<List<string>>(briefContext.WatchlistSnapshot) ?? new();
                     activeCodes = new HashSet<string>(snapshotCodes, StringComparer.OrdinalIgnoreCase);
-                    briefLabel = $"Threat Zones for Intelligence Report dated {briefContext.BriefDate:dd MMM yyyy} at {briefContext.BriefDate:HH:mm} hrs";
                 }
                 else
                 {
                     // Live view: use current watchlist + always include home country
                     var watchlistCodes = _db.GetWatchlist().Select(w => w.CountryCode).ToList();
                     activeCodes = new HashSet<string>(watchlistCodes, StringComparer.OrdinalIgnoreCase);
-                    var latestBrief = _db.GetAllBriefs().OrderByDescending(b => b.BriefDate).FirstOrDefault();
-                    briefLabel = latestBrief != null
-                        ? $"Threat Zones for Intelligence Report dated {latestBrief.BriefDate:dd MMM yyyy} at {latestBrief.BriefDate:HH:mm} hrs"
-                        : "Threat Zones — no intelligence brief yet";
                 }
 
                 // Always include home country in the active set
@@ -208,16 +284,19 @@ namespace SafetySentinel
                 string countryJson = JsonConvert.SerializeObject(countryData);
                 await GlobeWebView.ExecuteScriptAsync($"loadCountryData({countryJson})");
 
-                // Brief date label
-                string escapedLabel = briefLabel.Replace("'", "\\'");
-                await GlobeWebView.ExecuteScriptAsync($"setBriefLabel('{escapedLabel}')");
-
                 var hotspotData = _hotspots.Select(h => new
                 {
+                    id = h.Id,
                     lat = h.Latitude, lng = h.Longitude,
                     name = h.LocationName, type = h.CrimeType,
                     severity = h.Severity, radius = h.RadiusMeters,
-                    incidents = h.IncidentCount90d
+                    incidents = h.IncidentCount90d,
+                    precinct = h.Precinct,
+                    timePattern = h.TimePattern,
+                    countryCode = h.CountryCode,
+                    lastDate = h.LastIncidentDate > 0
+                        ? DateTimeOffset.FromUnixTimeMilliseconds(h.LastIncidentDate).LocalDateTime.ToString("yyyy-MM-dd")
+                        : "Unknown"
                 });
                 string hotspotJson = JsonConvert.SerializeObject(hotspotData);
                 await GlobeWebView.ExecuteScriptAsync($"loadHotspotData({hotspotJson})");
@@ -302,7 +381,7 @@ namespace SafetySentinel
             _profile.HealthApproach = ProfileHealth.Text;
 
             // Geocode the address using Google API
-            var googleKey = SettingsGoogleKey.Text;
+            var googleKey = SettingsGoogleKey.Password;
             if (!string.IsNullOrEmpty(googleKey))
             {
                 try
@@ -421,7 +500,7 @@ namespace SafetySentinel
             var brief = _db.GetLatestBrief();
             if (brief != null)
             {
-                BriefContent.Text = brief.Content;
+                BriefContent.Text = NormalizeDashboard(brief.Content.Replace("`", ""));
                 BriefDateText.Text = $"Generated: {brief.BriefDate:yyyy-MM-dd HH:mm}";
                 _currentBriefId = brief.Id;
                 LoadChatHistoryFromBrief(brief);
@@ -449,6 +528,10 @@ namespace SafetySentinel
                     {
                         foreach (var entry in entries)
                         {
+                            // Skip saved assistant messages that contain old identity overrides —
+                            // replaying them back to the API would re-poison the conversation.
+                            if (entry.Role == "assistant" && ContainsIdentityOverride(entry.Text))
+                                continue;
                             _briefChatHistory.Add((entry.Role, entry.Text));
                             AddChatMessage(BriefChatMessages,
                                 entry.Role == "user" ? "Asset" : "Agent",
@@ -580,7 +663,83 @@ namespace SafetySentinel
         private void BriefHistory_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (BriefHistoryList.SelectedItem is ExecutiveBrief brief)
-                HistoryBriefContent.Text = brief.Content;
+                HistoryBriefContent.Text = NormalizeDashboard(brief.Content);
+        }
+
+        private void BriefHistory_Export(object sender, RoutedEventArgs e)
+        {
+            if (BriefHistoryList.SelectedItem is not ExecutiveBrief brief) return;
+            var dlg = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Export Intelligence Brief",
+                FileName = $"SENTINEL_Brief_{brief.BriefDate:yyyy-MM-dd_HH-mm}",
+                DefaultExt = ".txt",
+                Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
+            };
+            if (dlg.ShowDialog() != true) return;
+            System.IO.File.WriteAllText(dlg.FileName, brief.Content);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dlg.FileName) { UseShellExecute = true });
+        }
+
+        private void BriefHistory_Delete(object sender, RoutedEventArgs e)
+        {
+            if (BriefHistoryList.SelectedItem is not ExecutiveBrief brief) return;
+            var result = MessageBox.Show(
+                $"Permanently delete the brief from {brief.BriefDate:yyyy-MM-dd HH:mm}?\n\nThis cannot be undone.",
+                "Delete Brief", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes) return;
+            _db.DeleteBrief(brief.Id);
+
+            // If the deleted brief was the one currently displayed in the Brief tab,
+            // reload the most recent remaining brief (or show empty state).
+            if (brief.Id == _currentBriefId)
+                LoadLatestBrief();
+
+            LoadBriefHistory();
+            HistoryBriefContent.Text = "Select a brief from the list to view.";
+        }
+
+        private void BriefHistory_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.Delete)
+                BriefHistory_Delete(sender, e);
+        }
+
+        /// <summary>Right-click → Clear Chat History for a brief in the history list.</summary>
+        private void BriefHistory_ClearChat(object sender, RoutedEventArgs e)
+        {
+            if (BriefHistoryList.SelectedItem is not ExecutiveBrief brief) return;
+            if (string.IsNullOrEmpty(brief.ChatHistory)) return;
+            var result = MessageBox.Show(
+                $"Clear the saved chat history for the brief from {brief.BriefDate:yyyy-MM-dd HH:mm}?\n\nThe brief itself will not be deleted.",
+                "Clear Chat History", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes) return;
+            brief.ChatHistory = "";
+            _db.UpdateBrief(brief);
+            // If this is also the currently loaded brief, clear the live chat panel too
+            if (brief.Id == _currentBriefId)
+            {
+                _briefChatHistory.Clear();
+                BriefChatMessages.Document.Blocks.Clear();
+            }
+            UpdateStatus("Chat history cleared.");
+        }
+
+        /// <summary>Clear Chat button inside the sliding chat panel.</summary>
+        private void BriefClearChat_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentBriefId <= 0) return;
+            var result = MessageBox.Show(
+                "Clear the chat history for the current brief?\n\nThe brief itself will not be deleted.",
+                "Clear Chat History", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes) return;
+            _briefChatHistory.Clear();
+            BriefChatMessages.Document.Blocks.Clear();
+            // Erase from database too
+            var briefs = _db.GetAllBriefs();
+            var brief = briefs.FirstOrDefault(b => b.Id == _currentBriefId);
+            if (brief != null) { brief.ChatHistory = ""; _db.UpdateBrief(brief); }
+            UpdateStatus("Chat history cleared.");
         }
 
         #endregion
@@ -928,8 +1087,9 @@ namespace SafetySentinel
 
         private void LoadWatchlist()
         {
-            var watchlist = _db.GetWatchlist();
-            WatchlistView.ItemsSource = watchlist;
+            var watchlist = _db.GetWatchlist().OrderBy(w => w.CountryName).ToList();
+            WatchIncludedList.ItemsSource = watchlist;   // FTP left panel
+            WatchlistView.ItemsSource = watchlist;        // bottom detail GridView
 
             var watchedCodes = watchlist.Select(w => w.CountryCode)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -941,7 +1101,7 @@ namespace SafetySentinel
                 .OrderBy(kvp => kvp.Value)
                 .Select(kvp => new CountryViewItem { CountryName = kvp.Value, CountryCode = kvp.Key })
                 .ToList();
-            ExclusionView.ItemsSource = excluded;
+            WatchExcludedList.ItemsSource = excluded;    // FTP right panel
 
             UpdateCountryCount();
         }
@@ -1004,7 +1164,7 @@ namespace SafetySentinel
 
         private void ExclCtx_AddToWatchlist(object sender, RoutedEventArgs e)
         {
-            if (ExclusionView.SelectedItem is not CountryViewItem item) return;
+            if (WatchExcludedList.SelectedItem is not CountryViewItem item) return;
             _db.AddWatchlistItem(new WatchlistItem
             {
                 CountryCode = item.CountryCode,
@@ -1015,6 +1175,105 @@ namespace SafetySentinel
             });
             LoadWatchlist();
             UpdateStatus($"{item.CountryName} added to watchlist.");
+        }
+
+        // --- FTP watchlist arrow buttons ---
+
+        private void MoveToWatchlist_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = WatchExcludedList.SelectedItems.Cast<CountryViewItem>().ToList();
+            if (selected.Count == 0) return;
+            foreach (var country in selected)
+            {
+                _db.AddWatchlistItem(new WatchlistItem
+                {
+                    CountryCode = country.CountryCode,
+                    CountryName = country.CountryName,
+                    ContinentAdded = false,
+                    AlertThreshold = 60,
+                    ChangeThreshold = 10
+                });
+            }
+            LoadWatchlist();
+            LoadExitPlans();
+            UpdateStatus($"Added {selected.Count} {(selected.Count == 1 ? "country" : "countries")} to watchlist.");
+        }
+
+        private void MoveToExcluded_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = WatchIncludedList.SelectedItems.Cast<WatchlistItem>().ToList();
+            if (selected.Count == 0) return;
+
+            // Warn if any selected items have data attached
+            var withData = selected.Where(w =>
+                !string.IsNullOrEmpty(w.City) ||
+                !string.IsNullOrEmpty(w.StateProvince) ||
+                !string.IsNullOrEmpty(w.Reason) ||
+                w.ExitPlan).ToList();
+
+            if (withData.Count > 0)
+            {
+                var names = string.Join(", ", withData.Select(w => w.CountryName));
+                var result = MessageBox.Show(
+                    $"The following countries have attached data that will be lost:\n\n{names}\n\nCities, state/province, reason and exit plan flags will be removed. Continue?",
+                    "Remove from Watchlist",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (result != MessageBoxResult.Yes) return;
+            }
+
+            foreach (var item in selected)
+                _db.RemoveWatchlistItem(item.Id);
+            LoadWatchlist();
+            LoadExitPlans();
+            UpdateStatus($"Moved {selected.Count} {(selected.Count == 1 ? "country" : "countries")} to excluded list.");
+        }
+
+        // --- FTP panel context menus ---
+
+        private void WatchIncludedCtx_MoveToExcluded(object sender, RoutedEventArgs e)
+        {
+            if (WatchIncludedList.SelectedItem is not WatchlistItem item) return;
+            bool hasData = !string.IsNullOrEmpty(item.City) ||
+                           !string.IsNullOrEmpty(item.StateProvince) ||
+                           !string.IsNullOrEmpty(item.Reason) ||
+                           item.ExitPlan;
+            if (hasData)
+            {
+                var result = MessageBox.Show(
+                    $"{item.CountryName} has attached data (cities, state/province, reason or exit plan) that will be lost. Remove anyway?",
+                    "Remove from Watchlist",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (result != MessageBoxResult.Yes) return;
+            }
+            _db.RemoveWatchlistItem(item.Id);
+            LoadWatchlist();
+            LoadExitPlans();
+            UpdateStatus($"{item.CountryName} moved to excluded list.");
+        }
+
+        private void WatchExcludedCtx_AddToWatchlist(object sender, RoutedEventArgs e)
+        {
+            if (WatchExcludedList.SelectedItem is not CountryViewItem item) return;
+            _db.AddWatchlistItem(new WatchlistItem
+            {
+                CountryCode = item.CountryCode,
+                CountryName = item.CountryName,
+                ContinentAdded = false,
+                AlertThreshold = 60,
+                ChangeThreshold = 10
+            });
+            LoadWatchlist();
+            UpdateStatus($"{item.CountryName} added to watchlist.");
+        }
+
+        // --- FTP double-click handlers ---
+
+        private void WatchIncludedList_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (WatchIncludedList.SelectedItem is not WatchlistItem item) return;
+            ShowWatchlistEditDialog(item);
         }
 
         // --- Double-click handlers ---
@@ -1160,9 +1419,9 @@ namespace SafetySentinel
             return btn;
         }
 
-        private void ExclusionView_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        private void WatchExcludedList_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            if (ExclusionView.SelectedItem is not CountryViewItem item) return;
+            if (WatchExcludedList.SelectedItem is not CountryViewItem item) return;
             _db.AddWatchlistItem(new WatchlistItem
             {
                 CountryCode = item.CountryCode,
@@ -1190,7 +1449,7 @@ namespace SafetySentinel
             if (string.IsNullOrEmpty(criteria)) return;
 
             // Ensure API key is fresh
-            _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "");
+            _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "");
             SmartSelectBtn.IsEnabled = false;
             UpdateStatus("Smart Select: consulting AI...");
             try
@@ -1380,6 +1639,16 @@ namespace SafetySentinel
             }
         }
 
+        private void ExitPlanColumnHeader_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (sender is GridViewColumnHeader header && header.Column != null)
+            {
+                // Auto-resize: set to actual width first, then NaN triggers WPF content-fit
+                header.Column.Width = header.Column.ActualWidth;
+                header.Column.Width = double.NaN;
+            }
+        }
+
         private void ExitPlanCheck_Click(object sender, RoutedEventArgs e)
         {
             if (sender is CheckBox cb && cb.DataContext is ExitPlanItem planItem)
@@ -1452,14 +1721,14 @@ namespace SafetySentinel
                 if (sentinel == null) return;
 
                 SettingsApiKey.Password = sentinel["ApiKey"]?.ToString() ?? "";
-                SelectComboItem(SettingsModel, sentinel["Model"]?.ToString() ?? "claude-sonnet-4-20250514");
-                SettingsGoogleKey.Text = sentinel["GoogleMapsApiKey"]?.ToString() ?? "";
+                SelectComboItemByTag(SettingsModel, sentinel["Model"]?.ToString() ?? "claude-sonnet-4-5-20250929");
+                SettingsGoogleKey.Password = sentinel["GoogleMapsApiKey"]?.ToString() ?? "";
                 SettingsScanInterval.Text = sentinel["QuickScanIntervalHours"]?.ToString() ?? "2";
                 SettingsBriefTime.Text = sentinel["DailyBriefTime"]?.ToString() ?? "08:00";
                 SettingsAutoStart.IsChecked = sentinel["AutoStartScheduler"]?.ToObject<bool>() ?? false;
                 SettingsApiMonthlyBudget.Text = _profile.ApiMonthlyBudget.ToString("F2");
 
-                _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "");
+                _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "");
 
                 if (SettingsAutoStart.IsChecked == true && !string.IsNullOrEmpty(SettingsApiKey.Password))
                 {
@@ -1484,10 +1753,10 @@ namespace SafetySentinel
                     Sentinel = new
                     {
                         ApiKey = SettingsApiKey.Password,
-                        Model = (SettingsModel.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "claude-sonnet-4-20250514",
+                        Model = (SettingsModel.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "claude-sonnet-4-5-20250929",
                         QuickScanIntervalHours = int.TryParse(SettingsScanInterval.Text, out int h) ? h : 2,
                         DailyBriefTime = SettingsBriefTime.Text,
-                        GoogleMapsApiKey = SettingsGoogleKey.Text,
+                        GoogleMapsApiKey = SettingsGoogleKey.Password,
                         AutoStartScheduler = SettingsAutoStart.IsChecked ?? false,
                         DefaultHomeCountry = "ZA",
                         DefaultDestinationCountry = "US",
@@ -1497,7 +1766,7 @@ namespace SafetySentinel
                     }
                 };
                 File.WriteAllText(configPath, JsonConvert.SerializeObject(config, Formatting.Indented));
-                _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "");
+                _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "");
 
                 // Save credit balance to profile; record timestamp so spend is tracked from this point
                 if (double.TryParse(SettingsApiMonthlyBudget.Text, out double budget))
@@ -1529,7 +1798,7 @@ namespace SafetySentinel
         {
             try
             {
-                _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "");
+                _intel.Configure(SettingsApiKey.Password, (SettingsModel.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "");
 
                 // Warn user if watchlist is large (high token/credit usage)
                 var watchlistForScan = _db.GetWatchlist();
@@ -1633,17 +1902,92 @@ namespace SafetySentinel
                     });
                 });
 
+                // Fetch Google Maps exit routes before brief generation (if API key present)
+                string? googleRoutes = null;
+                var googleKey = SettingsGoogleKey.Password;
+                if (!string.IsNullOrWhiteSpace(googleKey) &&
+                    (_profile.HomeLatitude != 0 || _profile.HomeLongitude != 0))
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        ScanStageText.Text = "Querying exit routes via Google Maps...";
+                        ScanProgressPercent.Text = "75%";
+                        var pb = ScanProgressFill.Parent as FrameworkElement;
+                        if (pb != null) ScanProgressFill.Width = pb.ActualWidth * 0.75;
+                    });
+                    try
+                    {
+                        var maps = new SafetySentinel.Services.GoogleMapsService(googleKey);
+                        googleRoutes = await maps.GetExitRouteSummary(
+                            _profile.HomeLatitude, _profile.HomeLongitude,
+                            _profile.CurrentCountry, _profile.CurrentCity);
+                    }
+                    catch { /* silently skip — Claude will use its own knowledge */ }
+                    Dispatcher.Invoke(() =>
+                    {
+                        ScanStageText.Text = "Consulting Intelligence Agent...";
+                        ScanProgressPercent.Text = "80%";
+                        var pb = ScanProgressFill.Parent as FrameworkElement;
+                        if (pb != null) ScanProgressFill.Width = pb.ActualWidth * 0.80;
+                    });
+                }
+
                 // Run actual API call with streaming + progress + live text
                 var personalAlerts = _db.GetActivePersonalAlerts();
-                var brief = await _intel.GenerateDailyBrief(_profile, _countries, _hotspots, personalAlerts, scanProgress,
-                    textDelta => Dispatcher.Invoke(() =>
+
+                // Start silence-detection timer (runs on UI thread, no per-delta allocations)
+                _lastDeltaTime = DateTime.UtcNow;
+                _silenceSoundStopped = false;
+                _silenceOverlayShown = false;
+                _silenceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+                _silenceTimer.Tick += (_, _) =>
+                {
+                    var elapsed = (DateTime.UtcNow - _lastDeltaTime).TotalSeconds;
+                    if (elapsed >= 1.5 && !_silenceSoundStopped)
                     {
-                        BriefContent.Text += textDelta;
+                        SoundGenerator.StopTypewriter();
+                        _silenceSoundStopped = true;
+                    }
+                    if (elapsed >= 5.0 && !_silenceOverlayShown &&
+                        ScanProgressPanel.Visibility == Visibility.Visible)
+                    {
+                        StreamPauseOverlay.Visibility = Visibility.Visible;
+                        _silenceOverlayShown = true;
+                    }
+                };
+                _silenceTimer.Start();
+
+                var brief = await _intel.GenerateDailyBrief(_profile, _countries, _hotspots, personalAlerts, scanProgress,
+                    textDelta => Dispatcher.BeginInvoke(() =>
+                    {
+                        // AppendText is O(n) vs Text+= which is O(n²) — critical for large briefs
+                        BriefContent.AppendText(textDelta.Replace("`", ""));
+                        BriefContent.ScrollToEnd();
                         SoundGenerator.PlayTelexTick(textDelta);
+
+                        // Reset silence state — text is flowing again
+                        _lastDeltaTime = DateTime.UtcNow;
+                        _silenceSoundStopped = false;
+                        _silenceOverlayShown = false;
+                        StreamPauseOverlay.Visibility = Visibility.Collapsed;
+                    }),
+                    googleExitRoutes: googleRoutes,
+                    onReset: () => Dispatcher.BeginInvoke(() =>
+                    {
+                        // Web search interrupted stream — clear partial/thinking text so the
+                        // final complete brief starts fresh without the double-up.
+                        BriefContent.Text = "";
                     }));
 
-                // Stop typewriter sounds now that streaming is done
+                // Streaming complete — stop silence timer and clean up
+                _silenceTimer?.Stop();
+                _silenceTimer = null;
+                StreamPauseOverlay.Visibility = Visibility.Collapsed;
                 SoundGenerator.StopTypewriter();
+
+                // Elegant telex rewind — pause briefly then smoothly scroll back to top
+                await Task.Delay(1200);
+                await ScrollBriefToTopAsync();
 
                 // Complete the progress bar to 100%
                 ScanStageText.Text = "Intelligence brief secured.";
@@ -1662,7 +2006,7 @@ namespace SafetySentinel
                 if (brief != null)
                 {
                     // Brief text already streamed live — just update metadata
-                    BriefContent.Text = brief.Content; // ensure final complete text
+                    BriefContent.Text = NormalizeDashboard(brief.Content.Replace("`", "")); // ensure final complete text (strip backticks)
                     BriefDateText.Text = $"Generated: {brief.BriefDate:yyyy-MM-dd HH:mm}";
 
                     var scores = _intel.ParseScoresFromResponse(brief.Content);
@@ -1691,12 +2035,14 @@ namespace SafetySentinel
 
                     // Generate exit plan tasks only for watchlist entries flagged as Exit Plan destinations
                     var exitPlanItems = _db.GetWatchlist().Where(w => w.ExitPlan).ToList();
+                    var homeCountryName = _countries.FirstOrDefault(c => c.CountryCode == _profile.CurrentCountry)?.CountryName
+                                         ?? _profile.CurrentCountry;
                     foreach (var wItem in exitPlanItems)
                     {
                         var planName = wItem.DisplayText;
                         if (!_db.GetExitPlanByName(planName).Any())
                         {
-                            await _intel.GenerateExitPlanTasks(wItem, scanProgress);
+                            await _intel.GenerateExitPlanTasks(wItem, homeCountryName, scanProgress);
                         }
                     }
                     Dispatcher.Invoke(LoadExitPlans);
@@ -1856,6 +2202,184 @@ namespace SafetySentinel
 
         private void UpdateStatus(string msg) { StatusText.Text = msg; }
 
+        /// <summary>
+        /// Re-formats the THREAT DASHBOARD table so all columns align correctly regardless
+        /// of how Claude chose to pad them. Applied at display time only — stored brief is unchanged.
+        /// Column spec: DOMAIN(24) BAR(22) RISK(14) THREAT-LEVEL(19) CHANGE
+        /// </summary>
+        /// <summary>
+        /// Returns true if a saved assistant message contains phrases from an identity override,
+        /// so we can avoid replaying them to the API and poisoning the next conversation.
+        /// </summary>
+        private static bool ContainsIdentityOverride(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            var lower = text.ToLowerInvariant();
+            return lower.Contains("i'm claude") ||
+                   lower.Contains("i am claude") ||
+                   lower.Contains("made by anthropic") ||
+                   lower.Contains("created by anthropic") ||
+                   lower.Contains("claude, an ai assistant");
+        }
+
+        private static string NormalizeDashboard(string content)
+        {
+            const int domainW = 24;
+            const int riskW   = 14;
+            const int levelW  = 19; // "Threat Level: XX%  " padded
+
+            var headerRegex = new System.Text.RegularExpressions.Regex(
+                @"DOMAIN\s+THREAT BAR\s+RISK LABEL.+?THREAT LEVEL.+?CHANGE",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            // Matches: <domain>: <[##....]> <risk label>  Threat Level: NN%  <change>
+            var dataRegex = new System.Text.RegularExpressions.Regex(
+                @"^\s*([A-Za-z][A-Za-z\s/]*?):\s+(\[[#.]{20}\])\s+([\w\s]+?)\s{2,}Threat Level:\s*(\d{1,3})%\s+(.+?)\s*$",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+            string fixedHeader =
+                "  " + "DOMAIN".PadRight(domainW) + " " +
+                "THREAT BAR".PadRight(22) + " " +
+                "RISK LABEL".PadRight(riskW) + "  " +
+                "THREAT LEVEL".PadRight(levelW) + "  CHANGE";
+
+            string fixedDivider =
+                "  " + "------".PadRight(domainW) + " " +
+                "----------".PadRight(22) + " " +
+                "----------".PadRight(riskW) + "  " +
+                "------------".PadRight(levelW) + "  ------";
+
+            var lines  = content.Split('\n');
+            var sb     = new System.Text.StringBuilder(content.Length + 256);
+            bool nextIsDivider = false;
+
+            foreach (var rawLine in lines)
+            {
+                var line = rawLine.TrimEnd('\r');
+
+                // Replace the header row
+                if (headerRegex.IsMatch(line))
+                {
+                    sb.AppendLine(fixedHeader);
+                    nextIsDivider = true;
+                    continue;
+                }
+
+                // Replace the divider row that follows the header
+                if (nextIsDivider)
+                {
+                    nextIsDivider = false;
+                    var trimmed = line.Trim();
+                    if (trimmed.Length > 0 && trimmed.Replace("-", "").Replace(" ", "").Length == 0)
+                    {
+                        sb.AppendLine(fixedDivider);
+                        continue;
+                    }
+                }
+
+                // Reformat individual domain data rows
+                var m = dataRegex.Match(line);
+                if (m.Success)
+                {
+                    var domain = (m.Groups[1].Value.Trim() + ":").PadRight(domainW);
+                    var bar    = m.Groups[2].Value;                        // [##########..........] exactly 22 chars
+                    var risk   = m.Groups[3].Value.Trim().PadRight(riskW);
+                    var level  = $"Threat Level: {m.Groups[4].Value}%".PadRight(levelW);
+                    var change = m.Groups[5].Value.Trim();
+                    sb.AppendLine($"  {domain} {bar} {risk}  {level}  {change}");
+                    continue;
+                }
+
+                sb.AppendLine(line);
+            }
+
+            // Strip the single trailing newline the loop adds
+            var result = sb.ToString();
+            if (result.EndsWith("\r\n")) result = result[..^2];
+            else if (result.EndsWith("\n")) result = result[..^1];
+            return result;
+        }
+
+        /// <summary>
+        /// Sets a context-aware startup status message based on what profile info is missing.
+        /// </summary>
+        private void UpdateStartupStatus()
+        {
+            var apiKey = SettingsApiKey.Password;
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                UpdateStatus("Configure your Anthropic API key in Settings, then click Scan Now.");
+                return;
+            }
+
+            var missing = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(_profile.StreetAddress))
+                missing.Add("home address");
+
+            if (string.IsNullOrWhiteSpace(_profile.VehicleMake) || string.IsNullOrWhiteSpace(_profile.VehicleModel))
+                missing.Add("vehicle make & model");
+
+            if (string.IsNullOrWhiteSpace(_profile.FullName))
+                missing.Add("your name");
+
+            if (missing.Count > 0)
+            {
+                var hint = missing.Count == 1
+                    ? $"Add {missing[0]} in Profile for more accurate reports."
+                    : $"Add {string.Join(", ", missing.Take(missing.Count - 1))} and {missing.Last()} in Profile for more accurate reports.";
+                UpdateStatus($"{hint} Press Scan Now to generate a Security Report.");
+            }
+            else
+            {
+                UpdateStatus("Profile complete. Press Scan Now to generate a Security Report.");
+            }
+        }
+
+        /// <summary>
+        /// Smoothly animates the brief scroll viewer back to the top (telex rewind effect).
+        /// </summary>
+        private async Task ScrollBriefToTopAsync()
+        {
+            var sv = GetScrollViewer(BriefContent);
+            if (sv == null || sv.VerticalOffset <= 0) return;
+
+            double startOffset = sv.VerticalOffset;
+            const int steps = 80;
+            int step = 0;
+            var tcs = new TaskCompletionSource<bool>();
+
+            var rewindTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(14) }; // ~70fps
+            rewindTimer.Tick += (_, _) =>
+            {
+                step++;
+                double t = Math.Min((double)step / steps, 1.0);
+                // Ease-in-out cubic for smooth acceleration + deceleration
+                double eased = t < 0.5 ? 4 * t * t * t : 1 - Math.Pow(-2 * t + 2, 3) / 2;
+                sv.ScrollToVerticalOffset(startOffset * (1 - eased));
+                if (step >= steps)
+                {
+                    sv.ScrollToHome();
+                    rewindTimer.Stop();
+                    tcs.TrySetResult(true);
+                }
+            };
+            rewindTimer.Start();
+            await tcs.Task;
+        }
+
+        private static ScrollViewer? GetScrollViewer(DependencyObject element)
+        {
+            if (element is ScrollViewer sv) return sv;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
+            {
+                var child = VisualTreeHelper.GetChild(element, i);
+                var result = GetScrollViewer(child);
+                if (result != null) return result;
+            }
+            return null;
+        }
+
         private void UpdateCountryCount()
         {
             var watchCount = _db.GetWatchlist().Count;
@@ -1871,16 +2395,14 @@ namespace SafetySentinel
             var balance = _profile.ApiMonthlyBudget;
             if (balance > 0)
             {
-                // Track spend since the user last set their balance
+                // Balance was manually entered in Settings — subtract tracked spend from that date
                 var balanceSetDate = _profile.ApiBalanceSetAt > 0
                     ? DateTimeOffset.FromUnixTimeMilliseconds(_profile.ApiBalanceSetAt).UtcDateTime
                     : DateTime.MinValue;
                 var spentSince = _db.GetSpendSince(balanceSetDate);
                 var remaining = (decimal)balance - spentSince;
                 ApiCreditsLabel.Text = "CREDITS REMAINING";
-                ApiCreditsAmount.Text = remaining >= 0
-                    ? $"${remaining:F2} of ${balance:F2}"
-                    : $"${Math.Abs(remaining):F2} over balance";
+                ApiCreditsAmount.Text = remaining >= 0 ? $"${remaining:F2}" : $"-${Math.Abs(remaining):F2}";
                 ApiCreditsAmount.Foreground = new SolidColorBrush(remaining < 0
                     ? Color.FromRgb(0xef, 0x44, 0x44)
                     : remaining < (decimal)(balance * 0.2)
@@ -1889,9 +2411,10 @@ namespace SafetySentinel
             }
             else
             {
+                // No balance entered — show running monthly spend as best available info
                 var monthlySpend = _db.GetMonthlySpend();
-                ApiCreditsLabel.Text = "API SPEND THIS MONTH";
-                ApiCreditsAmount.Text = $"${monthlySpend:F4}";
+                ApiCreditsLabel.Text = "SPENT THIS MONTH";
+                ApiCreditsAmount.Text = $"${monthlySpend:F2}";
                 ApiCreditsAmount.Foreground = new SolidColorBrush(Color.FromRgb(0x9c, 0xa3, 0xaf));
             }
         }
@@ -1900,7 +2423,7 @@ namespace SafetySentinel
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                FileName = "https://console.anthropic.com/settings/billing",
+                FileName = "https://platform.claude.com/settings/billing",
                 UseShellExecute = true
             });
         }
@@ -1941,6 +2464,20 @@ namespace SafetySentinel
             foreach (ComboBoxItem item in combo.Items)
             {
                 if (item.Content?.ToString() == value)
+                {
+                    combo.SelectedItem = item;
+                    return;
+                }
+            }
+            if (combo.Items.Count > 0) combo.SelectedIndex = 0;
+        }
+
+        // Match by Tag (for model ComboBox where Content is the display name and Tag is the model ID)
+        private static void SelectComboItemByTag(ComboBox combo, string tag)
+        {
+            foreach (ComboBoxItem item in combo.Items)
+            {
+                if (item.Tag?.ToString() == tag)
                 {
                     combo.SelectedItem = item;
                     return;
